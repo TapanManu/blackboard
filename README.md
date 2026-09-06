@@ -1,77 +1,242 @@
 # Blackboard
 
-A local, agent-agnostic **context store** that lets agent work survive session death, and lets multiple agents avoid recomputing each other's results.
+**A shared notepad for AI agents.** It runs on your machine, stores what agents
+learn, and lets a new agent pick up where a previous one stopped — without
+re-reading everything that came before.
 
-## The claim being defended
+---
 
-> A local, addressable, digest-first shared store lets agent work survive session death and lets multiple agents avoid recomputing each other's results — at a coordination overhead low enough to be worth it on tasks above roughly five subtasks.
+## The problem
 
-Narrow, measurable in a week, and not provided by anything else in the stack today. The reasoning, the kill criteria, and the claims deliberately dropped are in **`docs/09-value.md`** — read that first if you only read one thing.
+An AI agent reads its entire conversation on every single turn. That transcript
+only grows, so a long task gets steadily more expensive:
 
-## Scope
+- **Step 5** — the agent re-reads 8,000 words of history. Cheap.
+- **Step 50** — it re-reads 200,000 words. Slow, expensive, and it starts missing
+  things buried in the middle.
+- **The session ends** — context limit, a crash, a closed terminal — and *all of
+  it is gone*. The next agent starts from nothing.
 
-**In:** L0 store (entries, URIs, versions, digests, projections, artifacts, links, FTS, scoped tokens, budgets) + L1 protocol (conventions, skill prompt, resume recipe).
-**Out, deferred, evidence-gated:** L2 orchestration (tasks, claim, leases) · L3 governance (trust, contest, curator) · L4 cloud (Postgres, K8s, KEDA).
+It gets worse with several agents. To hand work to a helper agent, the usual
+approach copies the relevant background into the helper's prompt. Four helpers
+means paying for that background four times. When they report back in prose, the
+coordinator has to read all four reports — and re-read them on every turn after
+that.
 
-**The boundary, once:** *addressable, durable, budgeted, isolated shared state — and the protocol for using it.* Not who runs, when, which model, how many, or how they are supervised.
+## The idea
 
-`docs/08-layers.md` has the full table. This layering is a revision: the first draft put a scheduler in the core, which contradicted the stated scope and was the largest source of complexity.
+Give the agents a shared place to write things down.
 
-## Plan
+Each note gets an address and a short **summary** (we call it a *digest* — one
+paragraph, roughly 150 words, capped at 200 tokens). Agents read summaries by
+default and only open the full note when they genuinely need the detail.
 
-**Week 1** — build L0 + L1 (5 days, `docs/07-roadmap.md`). **Week 2** — run arms A/B/C and apply the kill criteria. **Then** a human decides whether L2–L4 is justified. Each later layer has an observation as its trigger, not a date.
+So instead of copying a 40,000-word document into four agents' prompts, you write
+it to the board once and hand each agent an address. Instead of a coordinator
+re-reading four long reports forever, it reads four short summaries.
 
-## Status
+The measurable result: **the cost of picking up a task stops growing with how
+much work came before it.**
 
-**L0 + L1 are built and tested.** 80 tests pass. Measured results — including the flat-resume-cost result — are in **`MEASURED.md`**. L2–L4 remain designs, gated on the triggers in `docs/07-roadmap.md`.
+## Does it work?
+
+Yes, for the specific thing it was built to do. From the test suite, counted with
+a real tokenizer rather than an estimate:
+
+A fresh agent joining a half-finished project needs **2,679 tokens** to know the
+goal, the constraints, what is done, what is in flight, and which decisions were
+already made and why. That number **does not move** as the project grows:
+
+| Work stored on the board | A fresh agent needs | Share of reading everything |
+|---|---|---|
+| 10,506 tokens | **2,679 tokens** | 25.5% |
+| 229,566 tokens | **2,679 tokens** | 1.2% |
+| 886,746 tokens | **2,679 tokens** | 0.3% |
+
+Flat. That flat line is the point of the whole project.
+
+Two other measurements:
+
+| What | Result |
+|---|---|
+| Table data written as TSV instead of JSON | **44.6% fewer tokens** (30 rows) |
+| The tool descriptions agents carry every turn | **395 tokens** (self-imposed limit: 600) |
+
+Full detail and the bugs measurement caught: **[Measured results](MEASURED.md)**.
+
+---
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```bash
-uv run --python 3.12 --with pytest --with pytest-timeout --with tiktoken pytest tests/ -q
-uv run --python 3.12 python -m blackboard.cli -w acme init
-uv run --python 3.12 python -m blackboard.cli -w acme grant --role planner --quiet
+git clone https://github.com/TapanManu/blackboard.git
+cd blackboard
+uv venv --python 3.12 && uv pip install -e '.[dev,mcp]'
+
+# create a workspace and an access token for an agent
+uv run blackboard-mcp -w myproject init
+uv run blackboard-mcp -w myproject grant --role planner --quiet
+
+uv run pytest -q        # 87 tests
 ```
 
-| Measured | |
+Connect it to Claude Code by copying `.mcp.json.example` to `.mcp.json`. Any
+MCP-capable client works — nothing here is specific to one model or vendor.
+
+---
+
+## The five things an agent can do
+
+| Tool | What it does |
 |---|---|
-| Tool schema, re-sent every turn | **395 tokens** (budget 600) |
-| TSV vs JSON, 30 rows | **44.6% smaller** |
-| Cold resume from a mid-run board | **2,679 tokens** |
-| Resume cost as board grew 10k → 887k tokens | **flat at 2,679** |
+| `update_state` | Write a note. Requires a summary. Large files are stored outside the note. |
+| `get_state` | Read notes by address. Returns summaries unless you ask for more. |
+| `list_keys` | List what exists in a subject area. Can return a compact table. |
+| `search_keys` | Full-text search. Returns addresses and summaries, never full contents. |
+| `link_state` | Record that one note came from, depends on, or contradicts another. |
 
-## Architecture
+That is the complete surface. There is deliberately no scheduler, no locking, and
+no task queue — see [What we chose not to build](#what-is-built-and-what-is-not).
 
-**[`ARCHITECTURE.md`](ARCHITECTURE.md)** — the originating brief, all fifteen questions answered in a table, and the block diagrams: system architecture, the L0–L4 layering, token flow with and without the board, the resume flow, topic isolation, and the data model.
+## Vocabulary
 
-## Canonical document
+You need six words to read the rest of this repository.
 
-**`BLUEPRINT.md`** — the production design, in the original blueprint's structure and section order. Every change from that original is marked inline as `Δn` with a reason, and indexed with its reversal cost at the end. Read this first; the `docs/` files below are supporting detail for individual sections.
-
-## Supporting detail
-| Doc | What it settles |
+| Term | Meaning |
 |---|---|
-| `docs/09-value.md` | Whether this is worth building, and when to stop |
-| `docs/08-layers.md` | The scope boundary and the five layers |
-| `docs/00-decisions.md` | 17 architectural choices, layer-tagged, with rejected alternatives |
-| `docs/08-costs.md` | What the board costs you — the case against |
-| `docs/01-answers.md` | Q1–Q15, requirements R1–R10 |
-| `docs/02-data-model.md` | SQL schema (`[L0]` tables only for now) |
-| `docs/03-api-mcp.md` | The five tools and their token budget |
-| `docs/04-local.md` | Install, wiring, security posture, failure modes |
-| `docs/06-benchmarks.md` | Arms, suites, report card, kill criteria |
-| `docs/07-roadmap.md` | Day-by-day week 1; triggers for L2–L4 |
-| `docs/05-kubernetes.md` | L4 design, held until a second machine needs it |
+| **Entry** | One note on the board. Has an address, a version, a summary, and contents. |
+| **Digest** | The mandatory short summary on every entry (≤200 tokens). Agents read these first. This is the single most important rule in the system. |
+| **Workspace** | One project or engagement. Its own database file. |
+| **Topic** | A subject area inside a workspace, e.g. `domain.automotive`. Used to keep unrelated work separated. |
+| **Token** | The unit AI models read and are billed in — roughly ¾ of a word. |
+| **Context window** | Everything a model can see at once. The scarce resource this project exists to conserve. |
 
-## Prompts
-`prompts/BUILD_PROMPT.md` — hand to Claude Code to build L0 + L1 · `prompts/planner.md`, `worker.md`, `curator.md` — reference role prompts · `skills/blackboard/SKILL.md` — the agent-agnostic protocol, works with any MCP-capable model
+Addresses look like this:
 
-## Design in one screen
-- **SQLite WAL, one daemon, one file.** Agents never touch the DB.
-- **Canonical JSON at rest, projected at read:** digest / fields / TSV / full / ref.
-- **Mandatory ≤200-token digest per entry.** The load-bearing rule.
-- **Five tools, ≤600 tokens of schema** — re-sent every turn, so the surface is a budget.
-- **Capability-scoped tokens per topic** — isolation enforced at the daemon, not in the prompt.
-- **Board content is data, never instructions.**
-- **No scheduler, no locks, no trust engine, no broker** in v1. Conventions first; code only where a convention is measured to fail.
+```
+bb://myproject/domain.automotive/fact/brake-assembly
+    └workspace┘ └───topic─────┘ └kind┘ └────name────┘
+```
 
-## Provenance of the idea
-[collusion.wiki](https://collusion.wiki/) documents ~18,000 posts from agents that spontaneously used a public wiki to coordinate. It is **not** a validation of this architecture — the mechanism there was answer-pooling and sandbox evasion, not context optimization. It is evidence of *demand*: agents built a blackboard when none was offered, on a surface with no schema, no auth and no scheduler. That is the argument for giving them a good one, and for keeping it small.
+## How it stays cheap
+
+**Summaries first.** Every entry carries one, and reading returns summaries by
+default. Reading 40 summaries costs about 4,000 tokens; reading 40 full entries
+could cost 180,000.
+
+**Ask for only what you need.** Five ways to read an entry, cheapest first:
+just the address → the summary → specific fields → a compact table → the whole
+thing. Start at the left and move right only when you must.
+
+**The server enforces a budget.** Every read takes a token budget. The server
+fills up to it, stops, and tells you exactly what it left out. It is not possible
+for a read to quietly flood an agent's context window.
+
+**Big files never pass through an agent.** Ask the server to ingest a file by
+path and it reads, stores and summarizes it itself — the agent receives an
+address and a summary. Reading a 40,000-token file *and then* filing it away
+saves nothing; you already paid for it.
+
+**Unrelated subjects cannot leak into each other.** Each agent's access token
+lists the topics it may touch, and the server enforces it. An agent working on
+cars cannot read the weapons topic — not by being asked not to, but because the
+server refuses. Search results and listings are filtered too.
+
+**Notes are data, never instructions.** Content written by other agents comes
+back wrapped in markers, and every role prompt states it must never be obeyed as
+a command. Sharing is this system's whole value, which also makes it the way one
+bad note could spread.
+
+---
+
+## What is built, and what is not
+
+The project is deliberately split into five layers. **Only the first two are
+built.** The rest are designed and documented, but held back until something
+actually goes wrong that requires them.
+
+| Layer | Name | What it covers | Status |
+|---|---|---|---|
+| **0** | **Store** | Notes, addresses, versions, summaries, search, file storage, access control, budgets | ✅ **Built** |
+| **1** | **Protocol** | The instructions agents follow: naming, when to read what, how to resume | ✅ **Built** |
+| **2** | Coordination | A task queue: claiming work, timed ownership, waiting for updates | ⏸ Deferred |
+| **3** | Governance | Scoring how trustworthy a note is, disputing bad notes, cleaning up old ones | ⏸ Deferred |
+| **4** | Cloud | Running on Kubernetes for a team: Postgres, S3, HTTP, authentication | ⏸ Deferred |
+
+Each deferred layer waits on a *specific observation*, not a date. Layer 2 waits
+until two agents are measured duplicating work. Layer 3 waits until a bad note
+actually causes a problem. Layer 4 waits until a second machine needs access.
+
+**Why hold them back?** The [wiki incident that inspired this](#origin) involved
+roughly 18,000 agent messages coordinating successfully with no schema, no
+access control, no locking and no scheduler at all. Every one of those deferred
+mechanisms guards against a failure that has not happened here yet, and building
+guards before the failure is how projects like this stall at 80% complete.
+
+---
+
+## Where to read more
+
+Start wherever your question is.
+
+| If you want to know… | Read |
+|---|---|
+| Is this worth building at all? What would prove it isn't? | [Is this worth it — the honest case](docs/09-value.md) |
+| The original questions and the block diagrams | [Architecture](ARCHITECTURE.md) |
+| What does it cost me? The argument *against* | [What the board actually costs you](docs/08-costs.md) |
+| Why was each design choice made, and what was rejected? | [Design decisions](docs/00-decisions.md) |
+| Why are three-quarters of the features not built? | [Scope layering](docs/08-layers.md) |
+| The complete production design, in one document | [Blueprint](BLUEPRINT.md) |
+| Database tables and address format | [Data model](docs/02-data-model.md) |
+| The five tools in detail | [Tool reference](docs/03-api-mcp.md) |
+| Installation, security posture, failure handling | [Running it locally](docs/04-local.md) |
+| How performance will be proven (not yet run) | [Benchmark plan](docs/06-benchmarks.md) |
+| What gets built next and when | [Roadmap](docs/07-roadmap.md) |
+| Running it for a team on Kubernetes | [Cloud design](docs/05-kubernetes.md) — designed, not built |
+
+**For agents:** [`skills/blackboard/SKILL.md`](skills/blackboard/SKILL.md) is the
+instruction sheet to give any agent using the board.
+[`prompts/`](prompts/) has example prompts for a planning agent, a worker agent,
+and a maintenance agent.
+
+---
+
+## Honest limits
+
+**This does not help every task.** Do not use it for:
+
+- Work with fewer than about five sub-tasks — the overhead exceeds the saving.
+- Anything that fits comfortably in one context window.
+- Strictly sequential work where each step needs the full output of the last.
+- A single session with no handoff and no risk of crashing.
+
+**What is proven and what is not.** The board demonstrably does what it claims at
+the cost it claims. It has *not* been shown to make a real multi-agent task
+cheaper or faster overall — that needs live model runs comparing approaches, which
+is the next piece of work. The
+[benchmark plan](docs/06-benchmarks.md) defines it and
+[the honest case](docs/09-value.md) states in advance what result would mean the
+project should stop.
+
+**The biggest risk.** An agent decides based on a summary. If the summary leaves
+out the thing that mattered, the agent is confidently wrong and *nothing flags
+it* — the note is well-formed, recent and properly filed. No amount of tuning
+fixes this; it is a property of summarizing.
+
+---
+
+## Origin
+
+[collusion.wiki](https://collusion.wiki/) documents roughly 18,000 posts from AI
+agents that spontaneously used a public German wiki to coordinate during a
+benchmark — pooling answers, sharing techniques, working around their sandbox.
+
+That is **not** an endorsement of this design. What those agents were doing was
+sharing answers and evading restrictions, not conserving context. But it is
+strong evidence of *demand*: given no shared memory, agents invented one on the
+nearest writable surface, with no schema, no access control and no coordinator.
+
+The lesson taken from it here is twofold — agents will use a shared board if you
+give them one, and the version they built for themselves was extremely simple.
