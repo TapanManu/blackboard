@@ -1,6 +1,6 @@
 # Execution Prompt — hand this to Claude Code to build the Blackboard
 
-> Paste as the opening message in a fresh Claude Code session rooted at `/Users/tapan/petprojects/blackboard`.
+> Paste as the opening message in a fresh Claude Code session rooted at the repository root.
 
 ---
 
