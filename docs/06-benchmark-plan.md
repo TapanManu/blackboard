@@ -1,6 +1,23 @@
-# Benchmark Suite — PoV Report Card
+# How performance will be proven
 
-> **This runs in week 2, against L0 + L1 only** (`docs/07-roadmap.md`). Its output feeds the kill criteria in `docs/09-value.md`. Nothing in L2–L4 is built before this report exists.
+**For:** anyone asking *does this actually make things cheaper?* The honest answer today is that nobody has measured it on a real task. This is the experiment that would, and the result that would mean the project should stop.
+
+> **This runs in week 2, against Layers 0 and 1 only** ([Roadmap and what triggers each layer](07-roadmap.md)). Its output feeds the stop criteria in [Is this worth building — the honest case](10-is-it-worth-building.md). Nothing in Layers 2 to 4 is built before this report exists.
+
+
+## Terms used on this page
+
+*(Project-wide vocabulary — entry, digest, workspace, topic — is in the [README](../README.md#vocabulary).)*
+
+| Term | Meaning |
+|---|---|
+| **TRR (Token Reduction Ratio)** | How many fewer tokens an approach uses than the single-agent baseline. |
+| **CRR (Cost Reduction Ratio)** | The same comparison in money rather than tokens — different, because models differ ~15x in price. |
+| **PEI (Parallel Efficiency Index)** | How well the work actually parallelized. 1.0 would be perfect; 0.5-0.7 is realistic. |
+| **TSR (Task Success Rate)** | Whether the answer was correct. Used as a gate: a cheaper wrong answer is not a result. |
+| **CHR (Cache Hit Rate)** | The share of input tokens served from the provider's prompt cache instead of being reprocessed. |
+| **TTS (Time to Solution)** | Wall-clock time from the first prompt to an accepted answer. |
+| **IQR (interquartile range)** | A spread measure, reported instead of an average so one slow run cannot skew the result. |
 
 ## Protocol
 - **Arms:**
@@ -8,10 +25,10 @@
   - **B — Ecosystem, no board:** Opus planner + Haiku workers, prompt-copy handoff. *Isolates how much of the win is the board vs. just cheaper models.* Do not skip this arm; without it a reviewer will assume the savings are model substitution.
   - **C — Ecosystem + Blackboard:** Opus planner + Haiku workers + `bbd`.
   - **D — Single Opus + Blackboard:** answers Q8 empirically.
-In L0 there is no scheduler: in arms B and C the planner writes `kind=task_spec` entries and worker sessions are started against them. Arm C differs from B only in that inputs are passed as URIs and results come back as digests — which is exactly the effect being measured.
+In Layer 0 — the store there is no scheduler: in arms B and C the planner writes `kind=task_spec` entries and worker sessions are started against them. Arm C differs from B only in that inputs are passed as URIs and results come back as digests — which is exactly the effect being measured.
 
 - **n = 5** paired runs per arm per task. Report **median + IQR**, not mean. Fixed temperature, fixed task inputs, randomized arm order.
-- **Gate:** report savings only where `TSR_C ≥ TSR_A − 2pp`. A cheaper wrong answer is not a result (D15).
+- **Gate:** report savings only where `TSR_C ≥ TSR_A − 2pp`. A cheaper wrong answer is not a result (Decision 15).
 
 ## Task suites
 1. **Multi-repo audit** (parallel-friendly): analyze 12 modules for a defect class, produce a consolidated report. Deterministic ground truth: seeded defects.
@@ -61,19 +78,19 @@ Cost is computed from a per-model price table, not assumed. `bench/report.py` em
 | Rework rate | | | | |
 | Recovery time | n/a | n/a | | |
 
-## Kill criteria (from `docs/09-value.md`)
+## Kill criteria (from [Is this worth building — the honest case](10-is-it-worth-building.md))
 | Signal | Fail threshold |
 |---|---|
 | Coordination overhead | > 15% |
 | TSR vs. baseline | worse by > 2pp |
 | Digest → full escalation rate | > 30% |
 | Resume test | fails, or > 3k tokens |
-| Tokens saved vs **arm B** | < 25% |
+| Tokens saved vs **approach B** | < 25% |
 
 Two of five failing = stop. Decide this now, while it is cheap to be objective.
 
 ## Expected shape of results (hypotheses to falsify, not claims)
-- **C beats A on cost by 5–10×**, driven mostly by model mix (visible as B ≈ C on cost) and by eliminating the `O(T²)` re-read (visible as C ≪ B on tokens). Separating these two effects is the entire point of arm B.
+- **C beats A on cost by 5–10×**, driven mostly by model mix (visible as B ≈ C on cost) and by eliminating the `O(T²)` re-read (visible as C ≪ B on tokens). Separating these two effects is the entire point of approach B.
 - **C beats B on tokens by 40–60%** — the board's specific contribution.
 - **TTS improves 2–4×** on parallel-friendly suites; roughly **no improvement** on suite 2 (sequential), which is the honest limit of the approach and should be reported as such.
 - **D (single agent + board)** shows modest token savings but a large **Peak Context** and **Recovery Time** win — the real Q8 answer.

@@ -1,30 +1,53 @@
-# Scope Layering — what is the project, and what is not
+# Scope: what is built and what is held back
+
+**For:** anyone asking why three-quarters of the design is not implemented. This is the boundary between what this project is and what it deliberately leaves to whoever runs the agents.
 
 Revised after reviewing collusion.wiki. The finding that forced this: ~18,000 agent posts coordinated successfully on a plain wiki with **no schema, no auth, no locks, no coordination primitives**. Protocol emerged from convention. Every mechanism in the original design was a mitigation for a failure that has not been observed here yet.
 
 Correction to my own earlier draft: `claim_task`, the `task` table, leases, the reaper, and KEDA queue-depth scaling are **orchestration**. The stated out-of-scope says this project "does not determine no of agents / how the ecosystem is built." Putting a scheduler in the core contradicted that, and it was the single largest source of complexity.
 
+
+## Terms used on this page
+
+*(Project-wide vocabulary — entry, digest, workspace, topic — is in the [README](../README.md#vocabulary).)*
+
+| Term | Meaning |
+|---|---|
+| **CAS (compare-and-swap)** | Write only if the entry is still at the version you last read; otherwise the write is rejected. Replaces locking. |
+| **TTL (time to live)** | How long something stays valid before it expires on its own. |
+| **FTS5** | Version 5 of SQLite's full-text search extension. |
+| **DAG (directed acyclic graph)** | A dependency tree with no loops — task B waits for task A, and nothing waits on itself. |
+| **CTE (common table expression)** | A SQL feature for recursive queries, used here to walk chains of related entries. |
+| **LRU (least recently used)** | A cleanup rule: discard whatever has gone longest without being read. |
+| **PEI (Parallel Efficiency Index)** | How well the work actually parallelized. 1.0 would be perfect; 0.5-0.7 is realistic. |
+| **SIS (State Integrity Score)** | How coherent and trustworthy the board's contents are. |
+| **KEDA** | A Kubernetes add-on that starts and stops workers based on a metric — here, how many tasks are waiting. |
+| **PDB (PodDisruptionBudget)** | A Kubernetes rule preventing too many copies of a service being taken down at once. |
+| **OpenTelemetry** | A vendor-neutral standard for tracing a request across services. |
+| **MCP (Model Context Protocol)** | The vendor-neutral standard by which an AI agent connects to an external tool. |
+| **TSV (tab-separated values)** | Rows of data with one header line — far cheaper in tokens than JSON for repetitive records. |
+
 ## The layers
 
 | Layer | Contents | In scope? | Build when | Effort |
 |---|---|---|---|---|
-| **L0 — Store** | Entries, URIs, versions, digests, topics, artifacts, append-only history, event log, scoped tokens, FTS | **Yes — this is the project** | Now | 4–5 days |
-| **L1 — Protocol** | Skill prompt, naming conventions, read-escalation ladder, resume recipe, reference role prompts | **Yes — non-optional** | Now, with L0 | ~1 day |
-| **L2 — Coordination** | Tasks, DAG, claim, lease, heartbeat, watch | Optional module, separate tool namespace | When two agents demonstrably duplicate work | 3–4 days |
-| **L3 — Governance** | Trust scoring, contest, status lifecycle, schema registry enforcement, curator/compaction | Optional module | When corruption is *measured*, not anticipated | 1 week |
-| **L4 — Cloud** | Postgres driver, S3 artifacts, HTTP transport, JWT/JWKS, Helm, KEDA, OTel | Optional deployment target | When a second machine actually needs it | 1 week |
+| **Layer 0 — the store — Store** | Entries, URIs, versions, digests, topics, artifacts, append-only history, event log, scoped tokens, FTS | **Yes — this is the project** | Now | 4–5 days |
+| **Layer 1 — the protocol — Protocol** | Skill prompt, naming conventions, read-escalation ladder, resume recipe, reference role prompts | **Yes — non-optional** | Now, with Layer 0 — the store | ~1 day |
+| **Layer 2 — the coordination — Coordination** | Tasks, DAG, claim, lease, heartbeat, watch | Optional module, separate tool namespace | When two agents demonstrably duplicate work | 3–4 days |
+| **Layer 3 — the governance — Governance** | Trust scoring, contest, status lifecycle, schema registry enforcement, curator/compaction | Optional module | When corruption is *measured*, not anticipated | 1 week |
+| **Layer 4 — the cloud — Cloud** | Postgres driver, S3 artifacts, HTTP transport, JWT/JWKS, Helm, KEDA, OTel | Optional deployment target | When a second machine actually needs it | 1 week |
 
-**Ship L0 + L1. Measure. Stop there if the numbers don't justify more.**
+**Ship Layers 0 and 1. Measure. Stop there if the numbers don't justify more.**
 
-## Why L1 is not optional
+## Why Layer 1 — the protocol is not optional
 
 A store without a usage protocol is SQLite with extra steps. Every win in the collusion.wiki case came from *convention* — timestamps, cohort IDs, round numbers, `ZZZ` backup pages — invented by the agents on top of a dumb surface. The conventions were the product; the wiki was incidental.
 
-So L1 ships as text, not code: the skill prompt, the URI naming scheme, the digest rule, the escalation ladder, and the resume recipe. Costs almost nothing, carries most of the value.
+So Layer 1 — the protocol ships as text, not code: the skill prompt, the URI naming scheme, the digest rule, the escalation ladder, and the resume recipe. Costs almost nothing, carries most of the value.
 
 ## Conventions before code
 
-Things that were originally tools and are now **conventions** in L1:
+Things that were originally tools and are now **conventions** in Layer 1 — the protocol:
 
 | Was | Now |
 |---|---|
@@ -33,9 +56,9 @@ Things that were originally tools and are now **conventions** in L1:
 | Mandatory digest enforced by server | Enforced by server (cheap), but *authored* by convention — the rule matters more than the check |
 | Task assignment | Agents self-organize; the planner writes `task_spec` entries and workers read them. No scheduler. |
 
-Every convention that proves insufficient in practice earns promotion to code. That is the promotion path, and the direction is one-way and evidence-gated.
+Every convention that proves insufficient in practice earns promotion to code. That is the promotion path, and the direction is one-way and held until evidence justifies them.
 
-## L0 tool surface — five tools
+## Layer 0 — the store tool surface — five tools
 
 | Tool | Purpose |
 |---|---|
@@ -45,13 +68,13 @@ Every convention that proves insufficient in practice earns promotion to code. T
 | `search_keys(q, topic?, limit)` | FTS over digests + bodies. Returns refs. |
 | `link_state(src, rel, dst[])` | Provenance edges. |
 
-~600 tokens of tool schema instead of ~1,400. **Measured at 395** (see `MEASURED.md`). Since schemas are re-sent every turn, that alone is ~800 tokens × turns × agents saved before anything else happens.
+~600 tokens of tool schema instead of ~1,400. **Measured at 395** (see [measured results](../MEASURED.md)). Since schemas are re-sent every turn, that alone is ~800 tokens × turns × agents saved before anything else happens.
 
-L2 adds `claim_task / complete_task / heartbeat_task / watch_events`. L3 adds `contest_state`. Both in separate namespaces, both disableable, neither loaded by default.
+Layer 2 — the coordination adds `claim_task / complete_task / heartbeat_task / watch_events`. Layer 3 — the governance adds `contest_state`. Both in separate namespaces, both disableable, neither loaded by default.
 
 ## What survives from the original design, and why
 
-| Kept in L0 | Justification |
+| Kept in Layer 0 — the store | Justification |
 |---|---|
 | Addressable URIs + topics | The wiki's page names. Minimum viable primitive. |
 | Mandatory digest | The single highest-leverage rule; makes the board browsable at constant cost. |
@@ -60,7 +83,7 @@ L2 adds `claim_task / complete_task / heartbeat_task / watch_events`. L3 adds `c
 | Projected reads (digest/TSV/full) | Directly attacks the metric being optimized. Rendering, not storage. |
 | `expect_version` CAS | A parameter, not a tool. ~10 lines. Prevents silent lost updates. |
 | Scoped tokens | Topic isolation (Q15) must be enforced, not requested. The wiki being public is why it was shut down. |
-| Event log | Cheap append; enables L2 later without a schema migration. |
+| Event log | Cheap append; enables Layer 2 — the coordination later without a schema migration. |
 
 | Deferred | Deferred because |
 |---|---|
@@ -82,7 +105,7 @@ L2 adds `claim_task / complete_task / heartbeat_task / watch_events`. L3 adds `c
 
 Every item in the design, assigned. Nothing is unassigned; if it is not listed here it is not in the project.
 
-## L0 — Store · **build now** · 4–5 days · the project
+## Layer 0 — the store — Store · **build now** · 4–5 days · the project
 
 **MCP tools (5)** — `update_state` · `get_state` · `list_keys` · `search_keys` · `link_state`
 
@@ -104,7 +127,7 @@ Every item in the design, assigned. Nothing is unassigned; if it is not listed h
 - Append-only `entry_history`; nothing destructively overwritten
 - Topic-scoped capability tokens (`workspace`, `topic_globs[]`, `caps[]`)
 - `<bb:body>` delimiters — board content is data, not instructions
-- Append-only `event` log (written now, consumed by L2 later)
+- Append-only `event` log (written now, consumed by Layer 2 — the coordination later)
 - stdio + Unix domain socket; loopback only; zero outbound connections
 
 **Decisions** — D1 · D2(SQLite half) · D3 · D4 · D6 · D7 · D9 · D10 · D14 · D15 · D16 · D17
@@ -115,9 +138,9 @@ Every item in the design, assigned. Nothing is unassigned; if it is not listed h
 
 **Explicitly excluded** — scheduler · locks · trust engine · message broker · Postgres
 
-**Dormant but present** — `entry.trust` (0, unused until L3) · `entry.status` (only `accepted` until L3)
+**Dormant but present** — `entry.trust` (0, unused until Layer 3 — the governance) · `entry.status` (only `accepted` until Layer 3 — the governance)
 
-## L1 — Protocol · **build now, with L0** · ~1 day · non-optional
+## Layer 1 — the protocol — Protocol · **build now, with Layer 0 — the store** · ~1 day · non-optional
 
 Ships as **text, not code**.
 
@@ -126,7 +149,7 @@ Ships as **text, not code**.
 - URI naming scheme and the `kind` vocabulary (`task_spec | result | decision | fact | artifact_ref | runbook | summary | state | question`)
 - Well-known URIs — `bb://<ws>/run/state/current`
 - Read-escalation ladder — `ref → digest → fields → table → full`
-- Resume recipe (~2k tokens to operational standing)
+- Resume recipe — the fixed sequence a fresh agent runs to catch up (**measured at 2,679 tokens**)
 - Digest authoring guidance ("write for a reader who decides from the digest alone")
 - Citation rule; never-overwrite-another's-entry rule
 - Cooperative claiming convention (no scheduler)
@@ -136,9 +159,9 @@ Ships as **text, not code**.
 **Decisions** — D13 · convention halves of D4 and D16
 **Questions** — Q3 · Q4 · Q8(cache mechanism) · Q10(resume recipe) · Q12
 **Requirements** — R2 · R3 · R5 · R9
-**Excluded** — any enforcement code. Conventions that fail get promoted to L0/L2, one way, evidence-gated.
+**Excluded** — any enforcement code. Conventions that fail get promoted to Layer 0 — the store/Layer 2 — the coordination, one way, held until evidence justifies them.
 
-## L2 — Coordination · deferred · 3–4 days
+## Layer 2 — the coordination — Coordination · deferred · 3–4 days
 
 **Trigger:** two agents measurably duplicate work **and** the cooperative `task_spec` convention proved insufficient.
 
@@ -149,7 +172,7 @@ Ships as **text, not code**.
 **Questions** — Q12(mechanized) · Q13(PEI) · Q14
 **Why deferred** — orchestration; contradicts the stated out-of-scope
 
-## L3 — Governance · deferred · ~1 week
+## Layer 3 — the governance — Governance · deferred · ~1 week
 
 **Trigger:** corruption or confidently-wrong entries **measured** in a real run; or a workspace crosses ~5k entries / ~50 MB.
 
@@ -161,15 +184,15 @@ Ships as **text, not code**.
 **Questions** — Q9(schema-loss mitigation) · Q10(corruption countermeasures) · Q13(SIS)
 **Why deferred** — mitigates failures not yet observed
 
-## L4 — Cloud · deferred · ~1 week
+## Layer 4 — the cloud — Cloud · deferred · ~1 week
 
 **Trigger:** a second machine actually needs the board.
 
 **Components** — `store/postgres.py` (same conformance suite) · `S3Artifacts` · MCP Streamable HTTP transport · JWT/JWKS verification · Helm chart · distroless Dockerfile · CloudNativePG cluster · NetworkPolicy default-deny · PDB · ResourceQuota · per-workspace token budget → `429 BUDGET_EXHAUSTED` · Prometheus metrics · OTel task spans · Grafana dashboard
-**Depends on L2** — the KEDA `ScaledJob` on `blackboard_tasks{state="ready"}` is meaningless without a task queue
+**Depends on Layer 2 — the coordination** — the KEDA `ScaledJob` on `blackboard_tasks{state="ready"}` is meaningless without a task queue
 **Decisions** — D1(same-image) · D2(Postgres half)
 **Questions** — Q13(metric plumbing) · Q15(namespace isolation)
-**Why documented now** — so L0's `Store` interface is shaped correctly on day one. Not so it gets built.
+**Why documented now** — so Layer 0 — the store's `Store` interface is shaped correctly on day one. Not so it gets built.
 
 ## L∞ — never in scope
 

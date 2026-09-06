@@ -1,6 +1,17 @@
-# Data Model
+# Data model and address format
 
-**Layer tags:** `[L0]` ships now. `[L2]` (tasks/leases) and `[L3]` (trust/producer stats) are optional modules — the columns and tables are documented here so adding them later is not a migration surprise, but they are **not built in week 1**. See `docs/08-layers.md`.
+**For:** anyone reading or extending the code. Shows every database table, what an address looks like, and which tables belong to layers that are not built yet.
+
+**Layer tags:** **Layer 0 (Store)** ships now. **Layer 2 (Coordination)** (tasks/leases) and **Layer 3 (Governance)** (trust/producer stats) are optional modules — the columns and tables are documented here so adding them later is not a migration surprise, but they are **not built in week 1**. See [Scope: what is built and what is held back](08-scope-and-layers.md).
+
+
+## Terms used on this page
+
+*(Project-wide vocabulary — entry, digest, workspace, topic — is in the [README](../README.md#vocabulary).)*
+
+| Term | Meaning |
+|---|---|
+| **WAL (write-ahead logging)** | A SQLite mode that lets many readers work while one writer writes. |
 
 ## Addressing
 ```
@@ -15,7 +26,7 @@ bb-artifact://sha256/<hex>
 
 ## SQL schema (SQLite; Postgres differs only in types/`RETURNING` syntax)
 
-### [L0] core tables
+### **Layer 0 (Store)** core tables
 ```sql
 PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
 PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;
@@ -40,7 +51,7 @@ CREATE TABLE entry (
   producer      TEXT NOT NULL,           -- agent id
   model         TEXT,
   confidence    REAL,                    -- self-reported [0,1]
-  trust         REAL NOT NULL DEFAULT 0, -- [L3] computed; 0 and unused in L0
+  trust         REAL NOT NULL DEFAULT 0, -- **Layer 3 (Governance)** computed; 0 and unused in Layer 0 — the store
   trust_parts   TEXT,                    -- JSON of the six components
   ttl_at        INTEGER,
   pinned        INTEGER NOT NULL DEFAULT 0,
@@ -61,7 +72,7 @@ CREATE TABLE entry_history (           -- append-only; never updated
   PRIMARY KEY (uri, version)
 );
 
-CREATE TABLE link (                    -- the graph (D6)
+CREATE TABLE link (                    -- the graph (Decision 6)
   src_uri TEXT NOT NULL, rel TEXT NOT NULL, dst_uri TEXT NOT NULL,
   weight REAL DEFAULT 1.0, created_at INTEGER NOT NULL,
   PRIMARY KEY (src_uri, rel, dst_uri)
@@ -69,7 +80,7 @@ CREATE TABLE link (                    -- the graph (D6)
 CREATE INDEX ix_link_dst ON link(dst_uri, rel);
 -- rel: depends_on | derived_from | contradicts | supersedes | refines | cites | part_of
 
--- [L2] ---------------------------------------------------------------
+-- **Layer 2 (Coordination)** ---------------------------------------------------------------
 CREATE TABLE task (
   task_id TEXT PRIMARY KEY,
   workspace TEXT NOT NULL, topic TEXT NOT NULL,
@@ -87,8 +98,8 @@ CREATE INDEX ix_task_lease ON task(status, lease_expires_at);
 
 CREATE TABLE task_dep (task_id TEXT, depends_on TEXT, PRIMARY KEY(task_id, depends_on));
 
--- [L0] (append-only; L2 consumes it via watch_events) --------------------
-CREATE TABLE event (                   -- the broker (D11)
+-- **Layer 0 (Store)** (append-only; Layer 2 — the coordination consumes it via watch_events) --------------------
+CREATE TABLE event (                   -- the broker (Decision 11)
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL, workspace TEXT NOT NULL, topic TEXT NOT NULL,
   type TEXT NOT NULL,   -- put|patch|claim|complete|fail|contest|compact|lease_expired
@@ -96,14 +107,14 @@ CREATE TABLE event (                   -- the broker (D11)
 );
 CREATE INDEX ix_event_scope ON event(workspace, seq);
 
--- [L0] ---------------------------------------------------------------
-CREATE TABLE grant (                   -- capability tokens (D10)
+-- **Layer 0 (Store)** ---------------------------------------------------------------
+CREATE TABLE grant (                   -- capability tokens (Decision 10)
   token_hash TEXT PRIMARY KEY, agent_id TEXT NOT NULL, role TEXT NOT NULL,
   workspace TEXT NOT NULL, topic_globs TEXT NOT NULL, caps TEXT NOT NULL,
   budget_tokens INTEGER, issued_at INTEGER NOT NULL, expires_at INTEGER
 );
 
--- [L3] ---------------------------------------------------------------
+-- **Layer 3 (Governance)** ---------------------------------------------------------------
 CREATE TABLE producer_stats (          -- feeds Trust.Producer
   agent_id TEXT PRIMARY KEY, writes INTEGER, accepted INTEGER,
   contested INTEGER, reliability REAL DEFAULT 0.5, updated_at INTEGER
@@ -116,7 +127,7 @@ CREATE VIRTUAL TABLE entry_fts USING fts5(
   uri UNINDEXED, digest, body_text, content='', tokenize='porter');
 ```
 
-## [L2] Atomic claim (the queue, D11) — not built in week 1
+## **Layer 2 (Coordination)** Atomic claim (the queue, D11) — not built in week 1
 ```sql
 BEGIN IMMEDIATE;
 UPDATE task SET status='leased', lease_owner=:agent,
@@ -131,9 +142,9 @@ WHERE task_id = (
 RETURNING task_id, spec_uri;
 COMMIT;
 ```
-A reaper pass flips `status='leased' AND lease_expires_at < now` back to `ready` (or `failed` past `max_attempts`) and emits `lease_expired`. This is why leases beat locks (D5): agent death is self-healing.
+A reaper pass flips `status='leased' AND lease_expires_at < now` back to `ready` (or `failed` past `max_attempts`) and emits `lease_expired`. This is why leases beat locks (Decision 5): agent death is self-healing.
 
-## [L3] Blast radius of a contested entry — not built in week 1
+## **Layer 3 (Governance)** Blast radius of a contested entry — not built in week 1
 ```sql
 WITH RECURSIVE suspect(uri) AS (
   SELECT :bad_uri

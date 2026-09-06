@@ -1,4 +1,4 @@
-# Measured Results — L0 + L1
+# Measured Results — Layers 0 and 1
 
 Numbers below come from the test suite (`pytest -s`), computed with the **exact**
 `cl100k_base` tokenizer, not an estimate. Reproduce with:
@@ -44,7 +44,7 @@ computed from the heuristic.
 
 **The tool surface was 1,036 estimated tokens on first write** — over the 600
 budget. The CI test caught it; prose was moved out of the JSON Schema and into the
-L1 skill prompt, which is loaded once per session instead of re-sent every turn.
+Layer 1 — the protocol skill prompt, which is loaded once per session instead of re-sent every turn.
 Real measurement afterwards: 395.
 
 ## Bugs the tests found before any agent did
@@ -57,7 +57,7 @@ Real measurement afterwards: 395.
 
 ## Not yet measured
 
-Everything in `docs/06-benchmarks.md` — arms A/B/C/D, TRR, TTS, PEI, Task Success
-Rate, coordination overhead. Those need real model runs, and the kill criteria in
-`docs/09-value.md` are decided from them. Nothing here says the board is worth it
+Everything in [How performance will be proven](docs/06-benchmark-plan.md) — the four approaches being compared (A–D), TRR, TTS, PEI, Task Success
+Rate, coordination overhead. Those need real model runs, and the stop criteria in
+[Is this worth building — the honest case](docs/10-is-it-worth-building.md) are decided from them. Nothing here says the board is worth it
 on a real task; it says the store does what it claims, at the cost it claims.

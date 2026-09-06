@@ -175,7 +175,8 @@ def cmd_serve(args):
     if args.stdio:
         from .server import serve_stdio
         return serve_stdio(args.workspace)
-    print("only --stdio is implemented in L0; HTTP transport is L4 (see docs/05-kubernetes.md)",
+    print("only --stdio is implemented; the HTTP transport is part of the deferred "
+          "cloud layer (see docs/05-running-on-kubernetes.md)",
           file=sys.stderr)
     return 2
 

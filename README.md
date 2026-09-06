@@ -183,18 +183,20 @@ Start wherever your question is.
 
 | If you want to know… | Read |
 |---|---|
-| Is this worth building at all? What would prove it isn't? | [Is this worth it — the honest case](docs/09-value.md) |
+| Is this worth building at all? What would prove it isn't? | [Is this worth it — the honest case](docs/10-is-it-worth-building.md) |
 | The original questions and the block diagrams | [Architecture](ARCHITECTURE.md) |
-| What does it cost me? The argument *against* | [What the board actually costs you](docs/08-costs.md) |
-| Why was each design choice made, and what was rejected? | [Design decisions](docs/00-decisions.md) |
-| Why are three-quarters of the features not built? | [Scope layering](docs/08-layers.md) |
+| What does it cost me? The argument *against* | [What the board actually costs you](docs/09-what-it-costs-you.md) |
+| Why was each design choice made, and what was rejected? | [Design decisions](docs/00-design-decisions.md) |
+| Why are three-quarters of the features not built? | [Scope layering](docs/08-scope-and-layers.md) |
 | The complete production design, in one document | [Blueprint](BLUEPRINT.md) |
 | Database tables and address format | [Data model](docs/02-data-model.md) |
-| The five tools in detail | [Tool reference](docs/03-api-mcp.md) |
-| Installation, security posture, failure handling | [Running it locally](docs/04-local.md) |
-| How performance will be proven (not yet run) | [Benchmark plan](docs/06-benchmarks.md) |
+| The five tools in detail | [Tool reference](docs/03-tool-reference.md) |
+| Installation, security posture, failure handling | [Running it locally](docs/04-running-locally.md) |
+| How performance will be proven (not yet run) | [Benchmark plan](docs/06-benchmark-plan.md) |
 | What gets built next and when | [Roadmap](docs/07-roadmap.md) |
-| Running it for a team on Kubernetes | [Cloud design](docs/05-kubernetes.md) — designed, not built |
+| Running it for a team on Kubernetes | [Cloud design](docs/05-running-on-kubernetes.md) — designed, not built |
+
+All of the above is indexed in [docs/README.md](docs/README.md).
 
 **For agents:** [`skills/blackboard/SKILL.md`](skills/blackboard/SKILL.md) is the
 instruction sheet to give any agent using the board.
@@ -216,8 +218,8 @@ and a maintenance agent.
 the cost it claims. It has *not* been shown to make a real multi-agent task
 cheaper or faster overall — that needs live model runs comparing approaches, which
 is the next piece of work. The
-[benchmark plan](docs/06-benchmarks.md) defines it and
-[the honest case](docs/09-value.md) states in advance what result would mean the
+[benchmark plan](docs/06-benchmark-plan.md) defines it and
+[the honest case](docs/10-is-it-worth-building.md) states in advance what result would mean the
 project should stop.
 
 **The biggest risk.** An agent decides based on a summary. If the summary leaves

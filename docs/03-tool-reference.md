@@ -1,10 +1,26 @@
-# MCP Tool Surface
+# Tool reference
+
+**For:** anyone connecting an agent to the board, or wondering why there are only five tools.
 
 Tool schemas are re-sent on **every turn of every agent**. The surface is a per-turn tax, so it is budgeted, not designed for completeness.
 
-## L0 — five tools, ≤600 tokens of schema (the project)
 
-> **Measured: 395 tokens** (`tests/test_server_budget.py`, exact cl100k_base). First implementation came in at 1,036 and the CI budget test rejected it; the fix was moving prose out of the JSON Schema into the L1 skill prompt, which loads once per session rather than every turn.
+## Terms used on this page
+
+*(Project-wide vocabulary — entry, digest, workspace, topic — is in the [README](../README.md#vocabulary).)*
+
+| Term | Meaning |
+|---|---|
+| **CAS (compare-and-swap)** | Write only if the entry is still at the version you last read; otherwise the write is rejected. Replaces locking. |
+| **WAL (write-ahead logging)** | A SQLite mode that lets many readers work while one writer writes. |
+| **FTS5** | Version 5 of SQLite's full-text search extension. |
+| **UDS (Unix domain socket)** | A local-only connection between processes on one machine. Not built; stdio is used instead. |
+| **MCP (Model Context Protocol)** | The vendor-neutral standard by which an AI agent connects to an external tool. |
+| **TSV (tab-separated values)** | Rows of data with one header line — far cheaper in tokens than JSON for repetitive records. |
+
+## Layer 0 — the store — five tools, ≤600 tokens of schema (the project)
+
+> **Measured: 395 tokens** (`tests/test_server_budget.py`, exact cl100k_base). First implementation came in at 1,036 and the CI budget test rejected it; the fix was moving prose out of the JSON Schema into the Layer 1 — the protocol skill prompt, which loads once per session rather than every turn.
 
 | Tool | Signature (abbrev.) | Notes |
 |---|---|---|
@@ -16,17 +32,17 @@ Tool schemas are re-sent on **every turn of every agent**. The surface is a per-
 
 CLI-only, never an agent tool: `admin` — `init | grant | status | health | export | import | destroy | vacuum`.
 
-**Not tools — conventions (L1):**
+**Not tools — conventions (Layer 1 — the protocol):**
 - *Orientation / resume:* `get_state("bb://<ws>/run/state/current")` on a well-known URI. No `hello_state` tool.
 - *Board health:* `admin health` from a shell, run by a human.
 - *Patch:* re-`put` with `expect_version`. A `patch_state` tool earns its place only if payload sizes prove it.
 
-## L2 — coordination (optional module, separate namespace, off by default)
+## Layer 2 — the coordination — coordination (optional module, separate namespace, off by default)
 `claim_task(topic_glob, lease_s)` · `complete_task(task_id, status, body, digest)` · `heartbeat_task(task_id)` · `watch_events(cursor, topics, timeout_s)`
 
-Build only against the trigger in `docs/07-roadmap.md`. Until then, agents self-organize by reading `kind=task_spec` entries a planner wrote — which is what the collusion.wiki agents did with no scheduler at all.
+Build only against the trigger in [Roadmap and what triggers each layer](07-roadmap.md). Until then, agents self-organize by reading `kind=task_spec` entries a planner wrote — which is what the collusion.wiki agents did with no scheduler at all.
 
-## L3 — governance (optional)
+## Layer 3 — the governance — governance (optional)
 `contest_state(uri, reason, evidence_uri?)`, plus server-side trust scoring and the status lifecycle.
 
 ## Response envelope (every read)
@@ -48,7 +64,7 @@ Bodies written by other agents are returned inside explicit delimiters and are *
 ...content...
 </bb:body>
 ```
-Reuse is the board's value and therefore the amplifier for one poisoned entry. See `docs/08-costs.md` §5.
+Reuse is the board's value and therefore the amplifier for one poisoned entry. See [What the board actually costs you](09-what-it-costs-you.md) §5.
 
 ## Wire economics
 | Interaction | Prompt-copy | Blackboard |
@@ -59,7 +75,7 @@ Reuse is the board's value and therefore the amplifier for one poisoned entry. S
 | Cold resume after crash | impossible | ~2,100 |
 
 ## Transport
-- **Local (L0):** stdio only. Each agent session spawns its own server process; SQLite WAL makes that safe across processes. No socket is bound, so there is no listener to reach. UDS/HTTP is L4.
-- **Cloud (L4):** MCP Streamable HTTP over TLS, bearer token = capability grant.
+- **Local (Layer 0 — the store):** stdio only. Each agent session spawns its own server process; SQLite WAL makes that safe across processes. No socket is bound, so there is no listener to reach. UDS/HTTP is Layer 4 — the cloud.
+- **Cloud (Layer 4 — the cloud):** MCP Streamable HTTP over TLS, bearer token = capability grant.
 
-Both serve an **identical** tool list — a list that varies by transport breaks prefix caching (D13).
+Both serve an **identical** tool list — a list that varies by transport breaks prefix caching (Decision 13).

@@ -1,8 +1,23 @@
-# Cloud / Kubernetes Deployment — **[L4], do not build yet**
+# Running it on Kubernetes — designed, not built
 
-> **Status: deferred.** This is a complete design, held until a second machine actually needs the board (`docs/07-roadmap.md`). It is documented now so that L0's `Store` interface is shaped correctly on day one — not so that it gets built in week one. The KEDA/queue-depth section additionally depends on **L2**, which is itself deferred.
+**For:** anyone evaluating whether a team could share one board. This is a complete design that has **not been implemented**. It is written down now so the storage layer was shaped correctly on day one, not because it is next.
 
-Same image, same tool surface, different `Store` and artifact drivers (D1). Nothing in an agent's prompt changes between local and cluster — only the MCP endpoint URL and the token.
+> **Status: deferred.** This is a complete design, held until a second machine actually needs the board ([Roadmap and what triggers each layer](07-roadmap.md)). It is documented now so that Layer 0 — the store's `Store` interface is shaped correctly on day one — not so that it gets built in week one. The KEDA/queue-depth section additionally depends on **Layer 2 — the coordination**, which is itself deferred.
+
+Same image, same tool surface, different `Store` and artifact drivers (Decision 1). Nothing in an agent's prompt changes between local and cluster — only the MCP endpoint URL and the token.
+
+
+## Terms used on this page
+
+*(Project-wide vocabulary — entry, digest, workspace, topic — is in the [README](../README.md#vocabulary).)*
+
+| Term | Meaning |
+|---|---|
+| **TTL (time to live)** | How long something stays valid before it expires on its own. |
+| **DAG (directed acyclic graph)** | A dependency tree with no loops — task B waits for task A, and nothing waits on itself. |
+| **KEDA** | A Kubernetes add-on that starts and stops workers based on a metric — here, how many tasks are waiting. |
+| **CloudNativePG** | A Kubernetes operator that runs a highly-available PostgreSQL cluster. |
+| **MCP (Model Context Protocol)** | The vendor-neutral standard by which an AI agent connects to an external tool. |
 
 ## Topology
 ```
@@ -31,7 +46,7 @@ SQLite over NFS/EFS/RWX has unsafe advisory locking; concurrent gateway replicas
 
 ## Manifests (skeleton)
 
-**Namespace + isolation (one workspace ≈ one namespace, Q15/R8)**
+**Namespace + isolation (one workspace ≈ one namespace, Q15/Requirement 8)**
 ```yaml
 apiVersion: v1
 kind: Namespace
@@ -127,7 +142,7 @@ spec:
             securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false,
                                runAsNonRoot: true, capabilities: { drop: ["ALL"] } }
 ```
-The queue depth *is* the autoscaling signal — no separate broker to scale on (D11). Workers are ephemeral Jobs: they claim, execute, complete, exit. A crashed pod's lease expires and the task is re-claimed by the next one. This is the cluster-scale expression of D5.
+The queue depth *is* the autoscaling signal — no separate broker to scale on (Decision 11). Workers are ephemeral Jobs: they claim, execute, complete, exit. A crashed pod's lease expires and the task is re-claimed by the next one. This is the cluster-scale expression of D5.
 
 **Postgres (CloudNativePG)**
 ```yaml
@@ -141,7 +156,7 @@ spec:
   backup: { barmanObjectStore: { destinationPath: s3://bb-backups/acme-audit } }
 ```
 
-## Auth in cluster (D10)
+## Auth in cluster (Decision 10)
 - An issuer service (or your existing OIDC IdP) mints short-lived JWTs: `{sub: agent_id, ws, topics[], caps[], exp}`.
 - The gateway verifies against JWKS and enforces `topic_globs` on **every** call — no trust in the agent's prompt.
 - Planner tokens: `caps=[read,write,link,claim,contest]`, `topics=["**"]`, TTL 1h.
@@ -153,12 +168,12 @@ spec:
 - **Row-level `workspace` scoping in one namespace** (light) for many runs by one team. Gateway enforces `workspace` from the token claim; never from a request parameter.
 - ResourceQuota + LimitRange per namespace so a runaway fan-out cannot starve the cluster.
 
-## Observability (feeds the benchmark, `docs/06-benchmarks.md`)
+## Observability (feeds the benchmark, [How performance will be proven](06-benchmark-plan.md))
 Prometheus metrics exported by the gateway:
 Namespace `blackboard_`, matching the spelled-out tool names. Prometheus suffix conventions observed: `_total` only on counters, `_seconds` on latency histograms, `_bytes` on size gauges, and bare names on gauges.
 
 ```
-# [L0] --------------------------------------------------------------------
+# **Layer 0 (Store)** --------------------------------------------------------------------
 blackboard_entries{workspace,topic,kind,status}              gauge
 blackboard_workspace_bytes{workspace}                        gauge
 blackboard_read_tokens_total{workspace,agent,role}           counter
@@ -168,12 +183,12 @@ blackboard_request_duration_seconds{tool}                    histogram
 blackboard_cas_conflicts_total{workspace}                    counter
 blackboard_artifact_bytes{workspace}                         gauge
 
-# [L2] --------------------------------------------------------------------
+# **Layer 2 (Coordination)** --------------------------------------------------------------------
 blackboard_tasks{workspace,topic,state}                      gauge   state=ready|leased|done|failed
 blackboard_claim_latency_seconds{workspace}                  histogram
 blackboard_lease_expired_total{workspace}                    counter  # coordination failures
 
-# [L3] --------------------------------------------------------------------
+# **Layer 3 (Governance)** --------------------------------------------------------------------
 blackboard_trust{workspace,kind}                             histogram
 blackboard_contested_total{workspace}                        counter
 blackboard_board_health{workspace}                           gauge

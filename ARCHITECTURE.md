@@ -76,7 +76,7 @@ be written to the board (anything may be) · defining how agents connect to tool
 ## 2. The fifteen questions
 
 Short answers here; the full reasoning is in
-[Questions answered in detail](docs/01-answers.md).
+[Questions answered in detail](docs/01-questions-answered.md).
 
 ### Q1. Are two Claude or Gemini sessions really separate agents, with their own memory?
 
@@ -362,7 +362,7 @@ Coordinator holds a 40k document         Writes it to the board ONCE
    <-- 1.5k of prose x4                     <-- {done, address, summary} x4  (200 each)
 
    Re-reads the whole history               Reads 4 SUMMARIES (800 tokens)
-   every turn  ->  grows as O(N^2)          every turn  ->  stays flat
+   every turn  ->  grows as O(N²)          every turn  ->  stays flat
 
    ~166,000 tokens                          ~41,600 tokens
 ```

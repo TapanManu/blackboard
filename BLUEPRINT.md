@@ -2,9 +2,9 @@
 
 This blueprint outlines the production design for a local, agent-agnostic Blackboard system that decouples agent execution state from session context windows using an SQLite-backed key-value store, JSON schema validation, and Model Context Protocol (MCP) tool bindings.
 
-> **Status: L0 + L1 are built.** 80 tests pass; measured results are in `MEASURED.md`, and three claims below were corrected by measurement (tool surface, TSV ratio, token estimator). Deferred layers L2–L4 remain designs.
+> **Status: Layers 0 and 1 are built.** 87 tests pass; measured results are in [measured results](MEASURED.md), and three claims below were corrected by measurement (tool surface, TSV ratio, token estimator). Layers 2 to 4 remain designs.
 >
-> **How to read this document.** It follows the original blueprint's structure and section order exactly. Where the design has changed, the change is marked inline as **`Δn`** with a one-line reason and is individually reversible. The full deviation index is at the end. Supporting detail lives in `docs/`; this document is canonical.
+> **How to read this document.** It follows the original blueprint's structure and section order exactly. Where the design has changed, the change is marked inline as **`Change n`** with a one-line reason and is individually reversible. The full deviation index is at the end. Supporting detail lives in `docs/`; this document is canonical.
 
 ---
 
@@ -14,20 +14,20 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 +-----------------------------------------------------------------------------------+
 |                            PLANNER AGENT (Claude Opus)                            |
 |                 - Generates Task DAG & Namespaced Keys                            |
-|                 - Audits Outputs & Evaluates Trust Scores                  [Δ2]   |
+|                 - Audits Outputs & Evaluates Trust Scores                  [Change 2]   |
 +------------------------------------------+----------------------------------------+
                                            | Reads Plan / Writes Task Subtrees
                                            v
 +-----------------------------------------------------------------------------------+
-|                        LOCAL BLACKBOARD ENGINE  (daemon: bbd)             [Δ11]   |
+|                        LOCAL BLACKBOARD ENGINE  (daemon: bbd)             [Change 11]   |
 |  +------------------------+  +------------------------+  +---------------------+  |
 |  | MCP Gateway (Stdio/IPC)|  | Version & Lease Manager|  | Schema, Digest &    |  |
 |  | Budgeted Tool API      |  | (CAS + TTL, no locks)  |  | Trust Engine        |  |
-|  |                 [Δ8]   |  |                 [Δ1]   |  |          [Δ2][Δ7]   |  |
+|  |                 [Change 8]   |  |                 [Change 1]   |  |          [Change 2][Change 7]   |  |
 |  +------------------------+  +------------------------+  +---------------------+  |
 |                                                                                   |
 |  +-----------------------------------------------------------------------------+  |
-|  | Storage Layer: SQLite (JSON in TEXT) + Content-Addressed Artifacts   [Δ6]   |  |
+|  | Storage Layer: SQLite (JSON in TEXT) + Content-Addressed Artifacts   [Change 6]   |  |
 |  +-----------------------------------------------------------------------------+  |
 +------------------------------------------^----------------------------------------+
                                            | Reads Targeted Inputs / Writes Deltas
@@ -35,42 +35,42 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 +-----------------------------------------------------------------------------------+
 |                        WORKER AGENTS (Claude Haiku / Gemini Flash)                |
 |                 - Execute Atomic Tasks via Isolated Key Access                    |
-|                 - Commit Validated JSON Payloads + Mandatory Digests      [Δ7]    |
+|                 - Commit Validated JSON Payloads + Mandatory Digests      [Change 7]    |
 +-----------------------------------------------------------------------------------+
 ```
 
 * **Storage Engine:** SQLite in Write-Ahead Logging mode (`PRAGMA journal_mode=WAL;`, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`). Microsecond-level local writes, zero-dependency setup, many concurrent readers with exactly one writer.
-  > **Δ11 — agents never open the database directly.** A single daemon (`bbd`) owns all state; agents reach it over MCP. *Reason:* SQLite over NFS/EFS/RWX has unsafe advisory locking, so direct access works on one laptop and corrupts data the moment two processes share a volume. Routing through a daemon makes the local→cloud move a config change rather than a rewrite.
+  > **Change 11 — agents never open the database directly.** A single daemon (`bbd`) owns all state; agents reach it over MCP. *Reason:* SQLite over NFS/EFS/RWX has unsafe advisory locking, so direct access works on one laptop and corrupts data the moment two processes share a volume. Routing through a daemon makes the local→cloud move a config change rather than a rewrite.
 
 * **Data Representation:** UTF-8 JSON stored in standard `TEXT` columns. Rejects BSON to avoid `BLOB` dependencies, eliminating double-serialization CPU overhead and enabling native SQL JSON queries (`json_extract()`).
-  > **Δ5 — JSON is canonical *at rest*; reads are projected.** Five render modes: `digest | fields | table (TSV) | full | ref`. *Reason:* tokens are counted on rendered text, not stored bytes. TSV for ≥3 homogeneous rows costs ~45–60% of the equivalent JSON array; JSON stays better for a single nested record. Store one format, render per shape.
+  > **Change 5 — JSON is canonical *at rest*; reads are projected.** Five render modes: `digest | fields | table (TSV) | full | ref`. *Reason:* tokens are counted on rendered text, not stored bytes. TSV for ≥3 homogeneous rows costs ~45–60% of the equivalent JSON array; JSON stays better for a single nested record. Store one format, render per shape.
 
 * **Payload Offloading:** Payloads exceeding 10 KB write directly to a local sandboxed file system (`./artifacts/`), storing lightweight URI references on the Blackboard.
-  > **Δ6 — artifact URIs are content-addressed:** `bb-artifact://sha256/<hex>` instead of `file://artifacts/id.json`. *Reason:* free dedup across agents, free integrity verification, and immutability — a URI in an old task spec can never silently change underneath a consumer.
-  > **Δ12 — server-side ingestion.** `update_state(uri, source_path=…)` has the daemon read, hash and digest the file, returning only `{uri, digest}`. *Reason:* offloading a payload *after* the agent has read it refunds nothing — the tokens are already in the window. This is the difference between "offload after paying" and "never pay," and it is what makes the single-agent case work at all.
+  > **Change 6 — artifact URIs are content-addressed:** `bb-artifact://sha256/<hex>` instead of `file://artifacts/id.json`. *Reason:* free dedup across agents, free integrity verification, and immutability — a URI in an old task spec can never silently change underneath a consumer.
+  > **Change 12 — server-side ingestion.** `update_state(uri, source_path=…)` has the daemon read, hash and digest the file, returning only `{uri, digest}`. *Reason:* offloading a payload *after* the agent has read it refunds nothing — the tokens are already in the window. This is the difference between "offload after paying" and "never pay," and it is what makes the single-agent case work at all.
 
 * **Concurrency Control:** `PRAGMA busy_timeout = 5000;` for writer contention.
-  > **Δ1 — optimistic CAS + TTL leases replace `acquire_lock` / `release_lock`.** Entry writes carry `expect_version`; a mismatch returns `409` with the current version. Task ownership is a lease that expires and auto-requeues. *Reason:* an agent that hits a rate limit, exhausts its context, crashes, or simply skips step 5 of its instructions holds a lock forever and wedges the board. Locks require a liveness guarantee that LLM sessions do not have. Leases fail safe; CAS makes lost updates impossible with zero agent cooperation. This also removes two tools from the surface.
+  > **Change 1 — optimistic CAS + TTL leases replace `acquire_lock` / `release_lock`.** Entry writes carry `expect_version`; a mismatch returns `409` with the current version. Task ownership is a lease that expires and auto-requeues. *Reason:* an agent that hits a rate limit, exhausts its context, crashes, or simply skips step 5 of its instructions holds a lock forever and wedges the board. Locks require a liveness guarantee that LLM sessions do not have. Leases fail safe; CAS makes lost updates impossible with zero agent cooperation. This also removes two tools from the surface.
 
 * **Protocol Layer:** MCP server exposed locally via stdio or IPC sockets.
-  > **Δ8 — the tool surface is a budget, not a catalogue.** Tool schemas are re-sent on *every turn of every agent*, so 30 tools ≈ 4–6k tokens burned per turn before any work happens. Hard cap: **five core tools, ≤600 tokens of schema**, CI-enforced. Every read tool takes `budget_tokens` and the server truncates and reports omissions.
+  > **Change 8 — the tool surface is a budget, not a catalogue.** Tool schemas are re-sent on *every turn of every agent*, so 30 tools ≈ 4–6k tokens burned per turn before any work happens. Hard cap: **five core tools, ≤600 tokens of schema**, CI-enforced. Every read tool takes `budget_tokens` and the server truncates and reports omissions.
   >
   > | Original | Now | Change |
   > |---|---|---|
   > | `get_state` | `get_state(uris[], mode, budget_tokens)` | batched; `digest` mode default; server-side budget |
   > | `update_state` | `update_state(uri, body \| source_path, digest, expect_version)` | CAS; mandatory digest; server-side ingestion |
   > | `list_keys` | `list_keys(topic, kind, mode, budget_tokens)` | topic-scoped; `table` (TSV) mode |
-  > | `acquire_lock` / `release_lock` | *removed* | see Δ1 |
+  > | `acquire_lock` / `release_lock` | *removed* | see Change 1 |
   > | — | `search_keys(q, topic)` | FTS over digests + bodies; returns refs |
   > | — | `link_state(src, rel, dst)` | provenance / DAG edges |
   >
   > **Names are unchanged from the original blueprint.** The batching, `budget_tokens`, `digest` defaulting and `expect_version` CAS are the substantive changes.
 
 * **Isolation Layer** *(new)*
-  > **Δ10 — topic separation is enforced by capability token, not by convention.** Each agent session holds a grant `{workspace, topic_globs[], caps[]}`; the daemon rejects out-of-scope reads. *Reason:* prompt-level instructions to "not look at" a topic are advisory. See Q15.
+  > **Change 10 — topic separation is enforced by capability token, not by convention.** Each agent session holds a grant `{workspace, topic_globs[], caps[]}`; the daemon rejects out-of-scope reads. *Reason:* prompt-level instructions to "not look at" a topic are advisory. See Q15.
 
 * **Trust Layer** *(new)*
-  > **Δ13 — board content is data, never instructions.** Bodies from other producers render inside `<bb:body uri=… producer=…>` delimiters and every role prompt states they are never to be obeyed. *Reason:* reuse is the board's entire value, which makes it the amplifier for a single poisoned entry.
+  > **Change 13 — board content is data, never instructions.** Bodies from other producers render inside `<bb:body uri=… producer=…>` delimiters and every role prompt states they are never to be obeyed. *Reason:* reuse is the board's entire value, which makes it the amplifier for a single poisoned entry.
 
 ---
 
@@ -85,26 +85,26 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 4. **Token Exploitation Mitigation:** Forwarding conversation transcripts downstream causes `O(k·C·d)` fan-out cost and `O(N²)` cumulative growth in the parent as it re-reads its own accumulated history each turn. Passing Blackboard key URIs restricts each prompt to a small stub plus that child's actual slice; fan-in returns `{status, uri, digest}` (~200 tokens) instead of prose.
 
 5. **Context-Cost Optimization:**
-   > **Δ4 — "O(1)" is precise only per step.** Two complexities were being conflated. *Storage lookup* is `O(log n)` on a B-tree — and was never the bottleneck. *Context cost*, the one that matters, goes from `O(H)` per turn in accumulated history `H` (so `O(T²)` over a `T`-step task) to `O(k·d)` per turn, independent of prior work — i.e. `O(T·k·d)`, linear. **Claim "O(1) per step," never "O(1)."** *Reason:* the unqualified claim is the fastest way to lose a technical audience.
+   > **Change 4 — "O(1)" is precise only per step.** Two complexities were being conflated. *Storage lookup* is `O(log n)` on a B-tree — and was never the bottleneck. *Context cost*, the one that matters, goes from `O(H)` per turn in accumulated history `H` (so `O(T²)` over a `T`-step task) to `O(k·d)` per turn, independent of prior work — i.e. `O(T·k·d)`, linear. **Claim "O(1) per step," never "O(1)."** *Reason:* the unqualified claim is the fastest way to lose a technical audience.
 
 6. **Context Bloat Impact:** Large context windows increase token cost, elevate latency (prefill scales with context; attention is quadratic in sequence length), and degrade accuracy via lost-in-the-middle retrieval decay and distraction from stale intermediate reasoning. The board fixes the last two as much as the first two: only current, accepted state is loaded, so superseded reasoning is structurally absent rather than merely old.
 
 7. **Storage Format Evaluation:**
    * **Winner: JSON in key-value namespaces (B + C) at rest, projected per shape at read, with relations in an edge table (D).**
-   * *Tabular/TSV (A):* **adopted as a render mode** — best token density for homogeneous rows; wrong for nested records. `Δ5`
+   * *Tabular/TSV (A):* **adopted as a render mode** — best token density for homogeneous rows; wrong for nested records. `Change 5`
    * *JSON (B):* canonical at rest — native to function-calling, schema-validatable, `json_extract()`-queryable, human-diffable. *BSON rejected:* forces `BLOB`, kills SQL JSON ops, saves zero **tokens**.
    * *KV namespacing (C):* the addressing layer. Orthogonal to value format, not a competitor to it.
    * *Graphs (D):* **adopted as a secondary index** — an `link(src, rel, dst)` table plus recursive CTEs, ~80 lines of SQL. Buys provenance chains, dependency closure and contradiction blast-radius. A dedicated graph *engine* remains unjustified. `Δ` *(revision: the original rejected graphs outright, which also gives up provenance — the thing that makes trust scoring possible.)*
    * *Prose (E):* rejected as a contract, **retained as the mandatory `digest`**. *Binary (E):* rejected — agents cannot read it without a decode round trip, so you pay the tokens plus a tool call.
    * **Enforced rule of thumb:** ≥3 homogeneous records → TSV. Nested single record → JSON. Anything being scanned → digest.
-   > **Δ7 — every entry carries a mandatory ≤200-token `digest`.** *Reason:* this is what makes the board browsable at constant cost — 40 digests ≈ 4k tokens where 40 bodies ≈ 180k. It is the single highest-leverage rule in the system, and it was absent from the original design.
+   > **Change 7 — every entry carries a mandatory ≤200-token `digest`.** *Reason:* this is what makes the board browsable at constant cost — 40 digests ≈ 4k tokens where 40 bodies ≈ 180k. It is the single highest-leverage rule in the system, and it was absent from the original design.
 
 8. **Single-Agent Benefits:** Single agents maintain a fixed, minimal system prompt while offloading execution state to the Blackboard, keeping the prefix locked in the KV cache.
    > **Δ4b — the mechanism is narrower than it appears, and one common claim is false.** The board cannot remove tokens already in your window; a transcript is append-only, and offloading a 40k-token result *after* reading it refunds nothing. Single-agent benefit comes from **crossing boundaries**, not compressing a live window:
    > 1. **Session survival** — unambiguous, unique to the board.
    > 2. **Compaction anchoring** — board state survives verbatim when a long session is summarized.
    > 3. **Avoided re-derivation** — for content already on the board.
-   > 4. **Server-side ingestion** (`Δ12`) — bulk content never enters any window.
+   > 4. **Server-side ingestion** (`Change 12`) — bulk content never enters any window.
    > 5. **Runbook reuse.**
    > 6. **Prompt-cache stability** — caching is exact-prefix-match; the moment a byte changes at position *i*, everything after is recomputed. Board content must therefore go strictly in the **tail**, never in the system prompt. That discipline is what turns board usage into a cache-hit improvement rather than a cache-hit disaster.
    >
@@ -116,7 +116,7 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
     * *Resumption:* a fresh session reads the canonical state and resumes immediately. Bounded recipe — `get_state("bb://<ws>/run/state/current")` (~400 tok) → task frontier as TSV (~600) → last 10 `decision` entries as digests (~800). **≈2k tokens to operational standing, regardless of whether the predecessor burned 20k or 400k.**
     * *Why a joiner behaves as if it had been there:* "being there" decomposes into four things, three recoverable — goal and constraints, **decisions already made and their rationale** (the one naive resume always loses, and why fresh agents re-litigate settled questions), and work completed/in flight. The fourth, tacit feel for the problem, is **not** recoverable by any design; it is compensated by making decisions explicit. State that honestly.
     * *Corruption Protection:*
-      > **Δ2 — the V-Score is replaced by a multi-signal Trust Score.** `w₁·S_schema + w₂·S_type + w₃·S_null` is ≈always 1.0, because anything passing `jsonschema` passes all three. It cannot detect the failure it exists for: **confidently wrong, well-formed output.**
+      > **Change 2 — the validity score is replaced by a multi-signal Trust Score.** `w₁·S_schema + w₂·S_type + w₃·S_null` is ≈always 1.0, because anything passing `jsonschema` passes all three. It cannot detect the failure it exists for: **confidently wrong, well-formed output.**
       >
       > `Trust = 0.25·Valid + 0.20·Provenance + 0.20·Corroboration + 0.15·Producer + 0.10·Freshness + 0.10·Coherence`
       >
@@ -135,7 +135,7 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 14. **Queue/Broker Requirements:** SQLite WAL handles concurrent reads natively; a `task` table with atomic claim-by-lease *is* a work queue, and a monotonic `event(seq)` log with long-poll *is* pub/sub. SQLite update hooks locally, Postgres `LISTEN/NOTIFY` in cluster. Kafka/RabbitMQ/Redis buy ordering and fan-out guarantees this workload does not need, at the cost of another daemon. Revisit above ~50 concurrent workers, and then add NATS JetStream *in front of* the events table, not instead of it.
 
 15. **Topic Separation:** Domain separation is enforced by explicit key namespacing — `bb://ws/domain.automotive/**` vs `bb://ws/domain.armaments/**`.
-    > **Δ10 — namespacing alone is advisory; three enforced layers are required.** (1) Namespace — queries are topic-scoped by default; no unscoped "list everything" exists. (2) **Capability grant** — the agent's token carries `topic_globs[]`, enforced at the daemon. *This is the load-bearing layer.* (3) Per-topic schema registry — a car spec cannot be written into the armaments topic. Cross-topic work is possible but explicit, requires both grants, and is auditable in the event log.
+    > **Change 10 — namespacing alone is advisory; three enforced layers are required.** (1) Namespace — queries are topic-scoped by default; no unscoped "list everything" exists. (2) **Capability grant** — the agent's token carries `topic_globs[]`, enforced at the daemon. *This is the load-bearing layer.* (3) Per-topic schema registry — a car spec cannot be written into the armaments topic. Cross-topic work is possible but explicit, requires both grants, and is auditable in the event log.
 
 ---
 
@@ -143,24 +143,24 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 
 ### Scope Boundaries
 
-> **Δ9 — scope is layered, and `L2`–`L4` are deferred behind observation-based triggers.** *Reason:* ~18,000 agent posts on collusion.wiki coordinated successfully with **no schema, no auth, no locks and no scheduler** — protocol emerged from convention. Leases, trust scoring, the broker and the curator all mitigate failures not yet observed here, and building a mitigation before its failure is how this class of project dies at 80% complete. **Correction of my own earlier draft:** putting `claim_task` and leases in the core contradicted the stated out-of-scope ("does not determine no of agents / how the ecosystem is built"), and was the single largest source of complexity.
+> **Change 9 — scope is layered, and `Layer 2 — the coordination`–`Layer 4 — the cloud` are deferred behind observation-based triggers.** *Reason:* ~18,000 agent posts on collusion.wiki coordinated successfully with **no schema, no auth, no locks and no scheduler** — protocol emerged from convention. Leases, trust scoring, the broker and the curator all mitigate failures not yet observed here, and building a mitigation before its failure is how this class of project dies at 80% complete. **Correction of my own earlier draft:** putting `claim_task` and leases in the core contradicted the stated out-of-scope ("does not determine no of agents / how the ecosystem is built"), and was the single largest source of complexity.
 
 | Layer | Contents | Status | Effort |
 |---|---|---|---|
-| **L0 — Store** | Entries, URIs, versions, mandatory digests, projections, content-addressed artifacts, links, FTS, event log, scoped tokens, CAS, server-side budgets | **Build now — this is the project** | 4–5 d |
-| **L1 — Protocol** | Skill prompt, naming conventions, escalation ladder, resume recipe, role prompts | **Build now — non-optional** | ~1 d |
-| **L2 — Coordination** | Tasks, DAG, claim, lease, heartbeat, watch | Deferred — when two agents *measurably* duplicate work | 3–4 d |
-| **L3 — Governance** | Trust scoring, contest, status lifecycle, schema enforcement, curator/compaction | Deferred — when corruption is *measured* | 1 w |
-| **L4 — Cloud** | Postgres, S3, HTTP transport, JWT, Helm, KEDA, OTel | Deferred — when a second machine needs it | 1 w |
+| **Layer 0 — the store — Store** | Entries, URIs, versions, mandatory digests, projections, content-addressed artifacts, links, FTS, event log, scoped tokens, CAS, server-side budgets | **Build now — this is the project** | 4–5 d |
+| **Layer 1 — the protocol — Protocol** | Skill prompt, naming conventions, escalation ladder, resume recipe, role prompts | **Build now — non-optional** | ~1 d |
+| **Layer 2 — the coordination — Coordination** | Tasks, DAG, claim, lease, heartbeat, watch | Deferred — when two agents *measurably* duplicate work | 3–4 d |
+| **Layer 3 — the governance — Governance** | Trust scoring, contest, status lifecycle, schema enforcement, curator/compaction | Deferred — when corruption is *measured* | 1 w |
+| **Layer 4 — the cloud — Cloud** | Postgres, S3, HTTP transport, JWT, Helm, KEDA, OTel | Deferred — when a second machine needs it | 1 w |
 
 | In-Scope (Blackboard Engine) | Out-of-Scope (External Orchestrator) | Fully Developed Benefits (Future) |
 | --- | --- | --- |
 | Database storage, schemas, and indexed key lookups | Determining total agent count or model selection | Cross-organization, persistent long-term agent memory |
-| Version CAS, TTL leases, transaction safety `Δ1` | Inner code execution logic inside external tools | Automatic multi-agent collusion / contradiction detection |
-| Schema validation and Trust verification `Δ2` | Vendor-level LLM context window optimizations | Dynamic cross-model benchmark self-tuning |
-| Content-addressed artifact offloading `Δ6` | MCP transport wire protocol design | Zero-latency local shared-memory IPC channels |
-| Mandatory digests, projections, token budgets `Δ7 Δ8` | **Task scheduling and dispatch** *(L2)* `Δ9` | Cross-run producer-reliability priors |
-| Topic isolation by capability grant `Δ10` | What agents choose to write — literally anything | Automatic schema induction from observed writes |
+| Version CAS, TTL leases, transaction safety `Change 1` | Inner code execution logic inside external tools | Automatic multi-agent collusion / contradiction detection |
+| Schema validation and Trust verification `Change 2` | Vendor-level LLM context window optimizations | Dynamic cross-model benchmark self-tuning |
+| Content-addressed artifact offloading `Change 6` | MCP transport wire protocol design | Zero-latency local shared-memory IPC channels |
+| Mandatory digests, projections, token budgets `Change 7 Change 8` | **Task scheduling and dispatch** *(Layer 2 — the coordination)* `Change 9` | Cross-run producer-reliability priors |
+| Topic isolation by capability grant `Change 10` | What agents choose to write — literally anything | Automatic schema induction from observed writes |
 
 **Never in scope:** how many agents run and which model each uses · how the ecosystem is composed or supervised · vendor KV-cache internals · MCP wire-protocol design · business logic inside agent tools.
 
@@ -171,18 +171,18 @@ This blueprint outlines the production design for a local, agent-agnostic Blackb
 1. **Task Initialization:** A Planner Agent (Claude Opus) receives a task, breaks it down into a Directed Acyclic Graph of subtasks, and writes the task nodes plus a shared-context entry to the board. Shared inputs are written **once** and referenced by URI thereafter.
 2. **Worker Dispatch:** The Planner starts lightweight Worker sessions (Claude Haiku / Gemini Flash), passing **only** the target subtask key. Each lane gets its own topic so worker grants stay narrow.
 3. **Execution:** The Worker reads its spec in full and its inputs as **digests**, escalating a specific input only when the digest is genuinely insufficient. It executes the task action and compiles the result.
-   > **Δ1 — no lock is acquired.** In L2 the worker holds a *lease* it must heartbeat; in L0 it simply writes with `expect_version`.
+   > **Change 1 — no lock is acquired.** In Layer 2 — the coordination the worker holds a *lease* it must heartbeat; in Layer 0 — the store it simply writes with `expect_version`.
 4. **Validation & Commit:** The Worker writes its result with a mandatory digest and cited sources. The Blackboard validates against the schema, computes a Trust Score, and commits under CAS.
-   > **Δ7 — the digest is not optional**, and it is written for a reader who will decide from the digest alone, because the planner will.
+   > **Change 7 — the digest is not optional**, and it is written for a reader who will decide from the digest alone, because the planner will.
 5. **State Aggregation:** The Planner reads the result **digest** and its Trust Score, marks the subtask complete at `≥0.80`, attaches a critique and requeues below `0.60`, and dispatches downstream tasks. Repeated failure of the same node means the decomposition is wrong — re-decompose rather than retry a fourth time.
 
 ---
 
 ## Benchmark Suite & Empirical Evaluation
 
-Compare a **Single Opus Session (Baseline)** against an **Ecosystem + Blackboard System (PoV)** across a complex multi-step technical audit task.
+Compare a **Single Opus Session (Baseline)** against an **Ecosystem + Blackboard System (proof of value)** across a complex multi-step technical audit task.
 
-> **Δ14 — four arms, not two.** With only A and C, a reviewer will correctly object that the savings are model substitution. **Arm B (ecosystem with prompt-copy handoff, no board)** isolates the board's actual contribution. **Arm D (single Opus + board)** answers Q8 — and must be run in *both* a single-window and a crossing-boundaries variant, or it produces a misleadingly flat result.
+> **Change 14 — four arms, not two.** With only A and C, a reviewer will correctly object that the savings are model substitution. **Arm B (ecosystem with prompt-copy handoff, no board)** isolates the board's actual contribution. **Arm D (single Opus + board)** answers Q8 — and must be run in *both* a single-window and a crossing-boundaries variant, or it produces a misleadingly flat result.
 > - **A** Single Opus, no board · **B** Opus + Haiku, prompt-copy, no board · **C** Opus + Haiku + board · **D** Single Opus + board
 > - n = 5 paired runs, median + IQR, randomized arm order, fixed inputs.
 
@@ -198,7 +198,7 @@ $$\text{Board Health} = 0.30 f_{\text{valid}} + 0.25 (1 - f_{\text{contested}}) 
 
 ### Performance Benchmark Metrics
 
-> **Δ3 — the numbers in the original table were not measured.** "~185,000 → ~22,000 tokens," "4.7× speedup," "~88% savings" had no run behind them. *Reason:* the first question any reviewer asks is how you measured it, and an unanswerable question there costs more credibility than the numbers buy. The table below is the **instrument**, to be filled by `bench/report.py`.
+> **Change 3 — the numbers in the original table were not measured.** "~185,000 → ~22,000 tokens," "4.7× speedup," "~88% savings" had no run behind them. *Reason:* the first question any reviewer asks is how you measured it, and an unanswerable question there costs more credibility than the numbers buy. The table below is the **instrument**, to be filled by `bench/report.py`.
 
 | Metric | A: Opus solo | B: Ecosystem, no board | C: Ecosystem + BB | D: Opus + BB | Target |
 | --- | --- | --- | --- | --- | --- |
@@ -213,7 +213,7 @@ $$\text{Board Health} = 0.30 f_{\text{valid}} + 0.25 (1 - f_{\text{contested}}) 
 | Coordination overhead | 0 | | | | ≤ 0.15 |
 | Session failure recovery | not possible | not possible | | | ≤ 3k tok, ≤ 10 s |
 
-> **Δ15 — kill criteria, written down before the run.** Coordination overhead > 15% · TSR worse by > 2pp · digest→full escalation rate > 30% · resume test failing or > 3k tokens · savings vs **arm B** < 25%. **Two of five failing means the honest answer is no.** Decide this now, while it is cheap to be objective. Report suite results where the ecosystem *loses* — a sequential-work suite should show roughly no speedup, and publishing that is what makes the other rows believable.
+> **Change 15 — stop criteria, written down before the run.** Coordination overhead > 15% · TSR worse by > 2pp · digest→full escalation rate > 30% · resume test failing or > 3k tokens · savings vs **approach B** < 25%. **Two of five failing means the honest answer is no.** Decide this now, while it is cheap to be objective. Report suite results where the ecosystem *loses* — a sequential-work suite should show roughly no speedup, and publishing that is what makes the other rows believable.
 
 ---
 
@@ -262,7 +262,7 @@ You are the Lead Planner and System Coordinator operating over a shared Blackboa
 - Accepting a low-trust result because it looks plausible. Plausible-and-wrong is the failure the score exists to catch.
 ```
 
-> **Δ1/Δ2/Δ8 applied above:** `acquire_lock` removed from the tool list; `v_score` → `trust`; `list_keys` → `list_keys`/`search_keys`. **Δ9:** in L0 there is no scheduler — the planner dispatches by *writing task_spec entries and starting sessions*, and learns of completion by polling `list_keys`, not by watching an event stream.
+> **Change 1/Change 2/Change 8 applied above:** `acquire_lock` removed from the tool list; `v_score` → `trust`; `list_keys` → `list_keys`/`search_keys`. **Change 9:** in Layer 0 — the store there is no scheduler — the planner dispatches by *writing task_spec entries and starting sessions*, and learns of completion by polling `list_keys`, not by watching an event stream.
 
 ### Skill Prompt: Worker Agents (Haiku / Flash / Specialized LLMs)
 
@@ -322,7 +322,7 @@ to the designated Blackboard key path and emit a minimal completion signal:
 {"subtask_id": ..., "status": ..., "uri": ...}
 ```
 
-> **Δ1 applied above:** `acquire_lock`/`release_lock` removed; `expect_version` CAS in their place. **Δ7:** mandatory digest. **Δ12:** `source_path`. **Δ13:** board content is data. **Δ6:** artifact URIs content-addressed.
+> **Change 1 applied above:** `acquire_lock`/`release_lock` removed; `expect_version` CAS in their place. **Change 7:** mandatory digest. **Change 12:** `source_path`. **Change 13:** board content is data. **Change 6:** artifact URIs content-addressed.
 
 ---
 
@@ -332,20 +332,20 @@ Every change from the original blueprint, with its reason and reversal cost.
 
 | Δ | Change | Reason | Reversible? |
 |---|---|---|---|
-| **Δ1** | `acquire_lock`/`release_lock` → CAS + TTL leases | LLM sessions have no liveness guarantee; a forgotten unlock wedges the board permanently | Yes, but **strongly advised against** |
-| **Δ2** | V-Score → six-signal Trust Score | `w₁·schema + w₂·type + w₃·null` is ≈always 1.0 and cannot detect confidently-wrong output | Yes; the *shape* of the fix matters more than my exact weights |
-| **Δ3** | Benchmark numbers removed | 185k/22k/4.7× had no run behind them | Yes — but shipping them invites an unanswerable question |
-| **Δ4** | "O(1)" → "O(1) per step"; single-agent claim narrowed | Storage lookup was never the bottleneck; the board cannot un-read tokens already in a window | Wording only |
-| **Δ5** | TSV added as a read-render mode | Tokens are counted on rendered text, not stored bytes; ~45–60% for homogeneous rows | Yes, drop `mode=table` |
-| **Δ6** | `file://artifacts/id.json` → `bb-artifact://sha256/…` | Free dedup, integrity, immutability | Yes, one URI scheme |
-| **Δ7** | Mandatory ≤200-token digest per entry | Makes the board browsable at constant cost — the highest-leverage rule in the system | Yes, but this is most of the token win |
-| **Δ8** | Tool surface budgeted: 5 tools, ≤600 tok; batching; `budget_tokens`. Names kept as `get_state`/`update_state`/`list_keys` | Schemas are re-sent every turn; largest single line item | Yes for batching/budgets; **names are unchanged** from your original |
-| **Δ9** | Scope layered L0–L4; scheduler moved out of core | Corrects my own earlier draft, which contradicted your stated out-of-scope | Yes — build L2 immediately if you prefer |
-| **Δ10** | Topic isolation by capability grant, not namespacing alone | Prompt-level "do not read X" is advisory | Yes, but Q15 is then unenforced |
-| **Δ11** | Agents never open SQLite; a daemon owns state | SQLite over shared/network FS has unsafe locking | Yes for local-only; breaks any cloud path |
-| **Δ12** | `update_state(source_path=…)` server-side ingestion | Offloading *after* reading refunds nothing | Yes; single-agent case then largely evaporates |
-| **Δ13** | Board content is data, never instructions | Reuse is the board's value and therefore the injection amplifier | Yes, **not advised** |
-| **Δ14** | Benchmark arms A/B/C/D instead of A/C | Without arm B, savings are indistinguishable from model substitution | Yes |
-| **Δ15** | Kill criteria fixed before the run | Makes a positive result credible | Yes |
+| **Change 1** | `acquire_lock`/`release_lock` → CAS + TTL leases | LLM sessions have no liveness guarantee; a forgotten unlock wedges the board permanently | Yes, but **strongly advised against** |
+| **Change 2** | validity score → six-signal Trust Score | `w₁·schema + w₂·type + w₃·null` is ≈always 1.0 and cannot detect confidently-wrong output | Yes; the *shape* of the fix matters more than my exact weights |
+| **Change 3** | Benchmark numbers removed | 185k/22k/4.7× had no run behind them | Yes — but shipping them invites an unanswerable question |
+| **Change 4** | "O(1)" → "O(1) per step"; single-agent claim narrowed | Storage lookup was never the bottleneck; the board cannot un-read tokens already in a window | Wording only |
+| **Change 5** | TSV added as a read-render mode | Tokens are counted on rendered text, not stored bytes; ~45–60% for homogeneous rows | Yes, drop `mode=table` |
+| **Change 6** | `file://artifacts/id.json` → `bb-artifact://sha256/…` | Free dedup, integrity, immutability | Yes, one URI scheme |
+| **Change 7** | Mandatory ≤200-token digest per entry | Makes the board browsable at constant cost — the highest-leverage rule in the system | Yes, but this is most of the token win |
+| **Change 8** | Tool surface budgeted: 5 tools, ≤600 tok; batching; `budget_tokens`. Names kept as `get_state`/`update_state`/`list_keys` | Schemas are re-sent every turn; largest single line item | Yes for batching/budgets; **names are unchanged** from your original |
+| **Change 9** | Scope layered Layer 0 — the store–Layer 4 — the cloud; scheduler moved out of core | Corrects my own earlier draft, which contradicted your stated out-of-scope | Yes — build Layer 2 — the coordination immediately if you prefer |
+| **Change 10** | Topic isolation by capability grant, not namespacing alone | Prompt-level "do not read X" is advisory | Yes, but Q15 is then unenforced |
+| **Change 11** | Agents never open SQLite; a daemon owns state | SQLite over shared/network FS has unsafe locking | Yes for local-only; breaks any cloud path |
+| **Change 12** | `update_state(source_path=…)` server-side ingestion | Offloading *after* reading refunds nothing | Yes; single-agent case then largely evaporates |
+| **Change 13** | Board content is data, never instructions | Reuse is the board's value and therefore the injection amplifier | Yes, **not advised** |
+| **Change 14** | Benchmark the four approaches being compared (A–D) instead of A/C | Without approach B, savings are indistinguishable from model substitution | Yes |
+| **Change 15** | Kill criteria fixed before the run | Makes a positive result credible | Yes |
 
 **Unchanged from the original:** tool names (`get_state`, `update_state`, `list_keys`) · SQLite WAL + the four pragmas · JSON-in-TEXT with BSON rejected and its reasoning · the 10 KB offload threshold · MCP over stdio/IPC · planner/worker role split · the five-step execution workflow · the DAG decomposition model · TRR and PEI formulas · the Q1–Q15 structure · the scope-boundary table format · both production prompts' structure and intent.

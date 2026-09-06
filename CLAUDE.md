@@ -6,12 +6,12 @@ Guidance for Claude Code working in this repository.
 
 A local context store for AI agents. Agents write notes with mandatory short
 summaries; other agents — including ones in later sessions — read the summaries
-cheaply instead of re-reading everything. See [README.md](README.md).
+cheaply instead of re-reading everything. See [the README](README.md).
 
 Layer 0 (the store) and Layer 1 (the protocol agents follow) are built and
 tested. Layers 2–4 are designed but deliberately not built; each waits on a
 specific observed failure, not a date. Do not build them without that trigger —
-see [docs/08-layers.md](docs/08-layers.md).
+see [Scope: what is built and what is held back](docs/08-scope-and-layers.md).
 
 ## Running things
 
@@ -34,14 +34,14 @@ human who has never seen this project before.** Not to record that a decision
 happened. Not to look thorough. To be *understood*, on the first read, by someone
 who arrived from a search result.
 
-This applies to `README.md`, `ARCHITECTURE.md`, everything in `docs/`, and every
+This applies to [the README](README.md), [architecture and diagrams](ARCHITECTURE.md), everything in `docs/`, and every
 commit message and pull request description. If a reader has to scroll back,
 guess, or open a second file to parse a sentence, that sentence has failed.
 
 ## The rules
 
 **1. Never use an abbreviation you have not defined on that page.**
-Not `L0`, `TRR`, `PEI`, `WAL`, `FTS`, `CAS`, `V-Score`, `KV`, `Δ3`, `TTS`.
+Not `L0`, `TRR`, `PEI`, `WAL`, `FTS`, `CAS`, `validity score`, `KV`, `Δ3`, `TTS`.
 Define it at first use, or use plain words instead. A term defined in another
 file is undefined for this reader.
 
@@ -49,11 +49,11 @@ file is undefined for this reader.
 > ✓ `Layer 0, the store: notes, addresses, versions, summaries, search, access control`
 
 **2. Link text says what the reader will find, never the filename.**
-A filename is an implementation detail. `docs/09-value.md` tells a newcomer
+A filename is an implementation detail. [Is this worth building — the honest case](docs/10-is-it-worth-building.md) tells a newcomer
 nothing; the same link labelled by its content tells them whether to click.
 
-> ✗ `The reasoning is in `docs/09-value.md` — read that first.`
-> ✓ `[Is this worth building — the honest case](docs/09-value.md)`
+> ✗ `The reasoning is in [Is this worth building — the honest case](docs/10-is-it-worth-building.md) — read that first.`
+> ✓ `[Is this worth building — the honest case](docs/10-is-it-worth-building.md)`
 
 **3. Give every code-named thing a plain-language name, and lead with that.**
 Internal shorthand is fine *after* the reader knows what it refers to.
@@ -75,7 +75,7 @@ Numbers, or a small worked example. "Reduces token consumption" is a claim;
 **6. Every number is either measured or labelled as a target.**
 Never publish an invented figure. If a test produced it, say which. If it is a
 goal, write "target". This repository lost its original benchmark table for
-exactly this reason — see [MEASURED.md](MEASURED.md).
+exactly this reason — see [measured results](MEASURED.md).
 
 **7. State the limits in the document that makes the claim.**
 Where it does not work, what is unproven, what would falsify it. A page that only
@@ -109,7 +109,7 @@ If any answer is no, it is not ready.
 
 ## Known debt
 
-`README.md` and `ARCHITECTURE.md` follow this standard. **The files in `docs/`
+[the README](README.md) and [architecture and diagrams](ARCHITECTURE.md) follow this standard. **The files in `docs/`
 do not yet** — they still use layer numbers, change markers (`Δn`), metric
 abbreviations, and filename link text. They were written as working design notes
 before this standard existed. Bring each one up to standard when you next touch
