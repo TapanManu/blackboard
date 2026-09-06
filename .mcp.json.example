@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "blackboard": {
+      "command": "uvx",
+      "args": ["--from", ".", "blackboard-mcp", "serve", "--stdio", "--workspace", "acme-audit"],
+      "env": {
+        "BLACKBOARD_TOKEN": "${BB_PLANNER_TOKEN}",
+        "BLACKBOARD_ROLE": "planner"
+      }
+    }
+  }
+}

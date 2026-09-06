@@ -1,0 +1,25 @@
+[project]
+name = "blackboard-mcp"
+version = "0.1.0"
+description = "Local, agent-agnostic context store for multi-agent LLM systems (L0 store + L1 protocol)"
+requires-python = ">=3.10"
+dependencies = []                      # core + CLI are stdlib-only, by design (R4)
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.0"]
+bench = ["tiktoken>=0.7"]
+dev = ["pytest>=8", "pytest-timeout>=2", "tiktoken>=0.7", "mcp>=2.0"]
+
+[project.scripts]
+blackboard-mcp = "blackboard.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blackboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --timeout=60"
