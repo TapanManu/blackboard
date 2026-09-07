@@ -155,6 +155,42 @@ bad note could spread.
 
 ---
 
+## Inside a single session: tools, shells, monitors, subagents
+
+The flat-resume number above is about crossing a session boundary. But one session that fans out —
+background shells, monitors, a handful of subagents — has a second problem: **everything its helpers
+say back lands in its history and is re-sent on every later turn.**
+
+The board only helps with part of that, and being clear about which part is the difference between
+saving context and adding overhead.
+
+| What produced the output | Does the board help? | What actually helps |
+|---|---|---|
+| **A subagent's findings** | **Yes** — the real win | worker writes a digest to its own lane; the parent reads ~200 tokens instead of a full report that persists all session |
+| **A background shell's log** | Only if it never entered context | cap tool output at the harness level so long output spills to a file automatically; or redirect and `update_state(source_path=…)` |
+| **A monitor notification** | No | make the predicate return a count, one line, or an exit code — then read only the matching lines |
+| **A tool result already in context** | No | nothing. It is paid for. Filing it afterwards is bookkeeping, not a saving |
+
+So the order to reach for things is:
+
+```
+harness output caps  →  predicate hygiene  →  hooks  →  the board
+```
+
+Hooks sit third because they can *prevent* a flood (deny the call, or rewrite its input) and can run
+a check on a smaller model so the main context never reads the evidence — but they cannot shrink a
+result that already arrived.
+
+**Rule zero, which the whole ordering follows from:** output that reaches an agent is already paid
+for. Reading a 40,000-token log and *then* filing it away saves nothing.
+
+[`skills/blackboard-parallel/`](skills/blackboard-parallel/SKILL.md) is this section as an
+instruction sheet, with the specific settings, lane naming for concurrent writers, and the
+break-even. [`integrations/claude-code/`](integrations/claude-code/SETUP.md) has the deterministic
+plumbing: a contract stated on every spawn, and a worker whose tools are scoped to the board.
+
+---
+
 ## What is built, and what is not
 
 The project is deliberately split into five layers. **Only the first two are
