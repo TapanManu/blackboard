@@ -24,7 +24,7 @@ def cmd_init(args):
     print(f"database   {config.db_path(args.workspace)}")
     print(f"artifacts  {config.artifacts_path()}")
     print(f"entries    {st['entries']}")
-    print(f"\nNext: blackboard-mcp grant --workspace {args.workspace} --role planner")
+    print(f"\nNext: blackboard-mcp --workspace {args.workspace} grant --role planner")
     return 0
 
 

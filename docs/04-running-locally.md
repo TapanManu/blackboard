@@ -18,13 +18,13 @@
 
 ## Install & run (Requirement 4 — target: under 60 seconds, one command)
 ```bash
-uvx blackboard-mcp init --workspace acme-audit     # creates ~/.blackboard/acme-audit.db + schemas
-uvx blackboard-mcp serve --workspace acme-audit    # UDS at ~/.blackboard/bbd.sock
+uvx blackboard-mcp --workspace acme-audit init     # creates ~/.blackboard/acme-audit.db + schemas
+uvx blackboard-mcp --workspace acme-audit serve --stdio   # stdio transport; UDS is deferred
 uvx blackboard-mcp grant --role planner  --topics '**'                 # prints token
 uvx blackboard-mcp grant --role worker   --topics 'tasks/car/**,domain.automotive/**'
 uvx blackboard-mcp status                          # health, entry count, size, trust distribution
 uvx blackboard-mcp export --out run.jsonl          # portable dump
-uvx blackboard-mcp destroy --workspace acme-audit  # clean disconnect (Requirement 4)
+uvx blackboard-mcp --workspace acme-audit destroy  # clean disconnect (Requirement 4)
 ```
 
 `--ephemeral` runs entirely in `:memory:` with a JSONL sidecar for throwaway experiments.
@@ -35,8 +35,8 @@ uvx blackboard-mcp destroy --workspace acme-audit  # clean disconnect (Requireme
   "mcpServers": {
     "blackboard": {
       "command": "uvx",
-      "args": ["blackboard-mcp","serve","--stdio","--workspace","acme-audit"],
-      "env": { "BB_TOKEN": "${BB_PLANNER_TOKEN}", "BB_ROLE": "planner" }
+      "args": ["blackboard-mcp","--workspace","acme-audit","serve","--stdio"],
+      "env": { "BLACKBOARD_TOKEN": "${BB_PLANNER_TOKEN}", "BLACKBOARD_ROLE": "planner" }
     }
   }
 }
