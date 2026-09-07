@@ -85,6 +85,10 @@ uv run pytest -q        # 87 tests
 Connect it to Claude Code by copying `.mcp.json.example` to `.mcp.json`. Any
 MCP-capable client works — nothing here is specific to one model or vendor.
 
+**Setting it up properly is [SETUP.md](SETUP.md)** — the prerequisites, the three skills to install,
+per-client adapters in [`integrations/`](integrations/), and how to verify. A reachable board that
+nobody taught the protocol to gets used badly, which costs more than not having one.
+
 ---
 
 ## The five things an agent can do
@@ -183,6 +187,7 @@ Start wherever your question is.
 
 | If you want to know… | Read |
 |---|---|
+| How do I set it up so agents use it well? | [Setup](SETUP.md) · [Integrations](integrations/README.md) |
 | Is this worth building at all? What would prove it isn't? | [Is this worth it — the honest case](docs/10-is-it-worth-building.md) |
 | The original questions and the block diagrams | [Architecture](ARCHITECTURE.md) |
 | What does it cost me? The argument *against* | [What the board actually costs you](docs/09-what-it-costs-you.md) |
@@ -199,7 +204,10 @@ Start wherever your question is.
 All of the above is indexed in [docs/README.md](docs/README.md).
 
 **For agents:** [`skills/blackboard/SKILL.md`](skills/blackboard/SKILL.md) is the
-instruction sheet to give any agent using the board.
+instruction sheet to give any agent using the board;
+[`skills/blackboard-parallel/`](skills/blackboard-parallel/SKILL.md) covers fan-out to subagents and
+background shells, and [`skills/session-handoff/`](skills/session-handoff/SKILL.md) covers parking a
+task and resuming it in a fresh session.
 [`prompts/`](prompts/) has example prompts for a planning agent, a worker agent,
 and a maintenance agent.
 
