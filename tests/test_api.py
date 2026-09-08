@@ -193,8 +193,9 @@ def test_append_respects_cas(bb, planner):
 
 def test_rows_write_costs_less_than_the_same_objects(bb, planner):
     """The write-side mirror of `table` mode: name the columns once, not per row."""
-    from blackboard.tokens import est_tokens, require_exact
-    require_exact("the rows-vs-objects saving")
+    from blackboard.tokens import est_tokens
+    from optional import require_exact_tokenizer
+    require_exact_tokenizer()
     cols = ["file", "line", "issue", "sev"]
     data = [[f"src/mod{i}.py", 100 + i, "digest echoed back to the author", "med"]
             for i in range(30)]

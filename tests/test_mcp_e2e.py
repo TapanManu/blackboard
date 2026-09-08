@@ -8,8 +8,10 @@ import os
 import sys
 import pytest
 
-pytest.importorskip("mcp")
-anyio = pytest.importorskip("anyio")
+from optional import require_module
+
+require_module("mcp", "the stdio transport is what these tests exercise")
+anyio = require_module("anyio", "the stdio transport needs an async runtime")
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client

@@ -4,7 +4,10 @@ import pytest
 from blackboard import tokens
 from blackboard.render import to_tsv
 
-tiktoken = pytest.importorskip("tiktoken")
+from optional import require_module
+
+tiktoken = require_module("tiktoken", "the estimator's error bound is only a claim "
+                                      "until it is checked against a real tokenizer")
 ENC = tiktoken.get_encoding("cl100k_base")
 
 
