@@ -9,6 +9,7 @@ Then pick by question.
 |---|---|
 | Is this worth building at all? What would prove it isn't? | [Is this worth building — the honest case](10-is-it-worth-building.md) |
 | What does it cost me? The argument *against* | [What the board actually costs you](09-what-it-costs-you.md) |
+| How do I use it without wasting tokens? | [Using it well](11-using-it-well.md) |
 | Why is three-quarters of the design not implemented? | [Scope: what is built and what is held back](08-scope-and-layers.md) |
 | Why was each choice made, and what was rejected? | [Design decisions and what was rejected](00-design-decisions.md) |
 | The full reasoning behind the fifteen original questions | [The fifteen questions, answered in full](01-questions-answered.md) |

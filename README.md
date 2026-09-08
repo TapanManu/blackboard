@@ -225,6 +225,7 @@ Start wherever your question is.
 | If you want to know… | Read |
 |---|---|
 | How do I set it up so agents use it well? | [Setup](SETUP.md) · [Integrations](integrations/README.md) |
+| How do I actually use it without wasting tokens? | [Using it well](docs/11-using-it-well.md) |
 | Is this worth building at all? What would prove it isn't? | [Is this worth it — the honest case](docs/10-is-it-worth-building.md) |
 | The original questions and the block diagrams | [Architecture](ARCHITECTURE.md) |
 | What does it cost me? The argument *against* | [What the board actually costs you](docs/09-what-it-costs-you.md) |
