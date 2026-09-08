@@ -105,3 +105,7 @@ Prompt caching matches an **exact prefix**: change one byte at position *i* and 
 ```
 
 Injecting a `get_state` result into a pinned preamble invalidates the cache on every read and makes the board a net loss. Kept in the tail, the same reads are what let the prefix stay warm across turns and across sessions.
+
+<!-- Maintainers: the why behind these rules is docs/11-using-it-well.md. Both files
+quote the same measured figures; a figure corrected here must be corrected there.
+tests/test_docs_in_sync.py fails if they drift. -->
