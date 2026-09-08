@@ -30,6 +30,8 @@ bb://<workspace>/<topic>/<kind>/<id>[@<version>]
 | Read one thing properly | `get_state(uri, mode="full")` |
 | Find something by meaning | `search_keys(q, topic)` |
 | Save a result | `update_state(uri, body, digest, expect_version=N)` |
+| Save a **set of similar records** | `update_state(uri, columns=[...], rows=[[...],[...]], digest=...)` — name the columns once; **28% fewer tokens** than the same objects |
+| Save something **small** | `update_state(uri, digest="...")` — a digest alone is an entry; no body needed |
 | Put a **large file** on the board | `update_state(uri, source_path="/path", digest=...)` — the daemon reads it; **the file never enters your context** |
 | Add to an entry already on the board | `update_state(uri, append={...}, append_path="findings")` — the daemon does the read-modify-write; **the existing body never enters your context** |
 | Record provenance | `link_state(src, "derived_from", dst)` |
@@ -54,6 +56,8 @@ A concrete answer — "the session that resumes this triage", "the parent collec
 
 ## Write discipline
 - **`digest` is mandatory.** Write it for a reader who will make decisions from the digest alone — because they will, and if it omits what mattered nothing will flag it.
+- **Never say it twice.** If the body already carries the summary, pass `digest_from="summary"` — the server lifts it, and it still counts as authored because you wrote it once. Composing a digest that restates a field you just wrote is the commonest write tax there is.
+- **Under ~200 tokens, the digest *is* the entry.** Write it with no body at all. A reader who needs more has your `sources`.
 - **Cite sources.** `file:line`, tool output, or an upstream `bb://` URI.
 - **CAS, don't clobber.** Pass `expect_version`. A 409 means someone else wrote; re-read and merge. Never retry blind.
 - **Payloads >10 KB are externalized automatically.** Keep the digest sharp regardless.

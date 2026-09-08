@@ -93,7 +93,7 @@ def test_source_path_and_body_are_mutually_exclusive(bb, planner, tmp_path):
     with pytest.raises(PayloadError):
         api.update_state(planner, U, body={"a": 1}, source_path=str(f), digest="d")
     with pytest.raises(PayloadError):
-        api.update_state(planner, U, digest="d")
+        api.update_state(planner, U)          # nothing to store and nothing to describe
 
 
 def test_list_keys_table_mode_and_search(bb, planner):
@@ -189,3 +189,76 @@ def test_append_respects_cas(bb, planner):
     api.update_state(planner, U, body={"f": [1]}, digest="d", expect_version=1)
     with pytest.raises(VersionConflict):
         api.update_state(planner, U, append=2, append_path="f", expect_version=1)
+
+
+def test_rows_write_costs_less_than_the_same_objects(bb, planner):
+    """The write-side mirror of `table` mode: name the columns once, not per row."""
+    from blackboard.tokens import est_tokens
+    cols = ["file", "line", "issue", "sev"]
+    data = [[f"src/mod{i}.py", 100 + i, "digest echoed back to the author", "med"]
+            for i in range(30)]
+    api, _ = bb
+    r = api.update_state(planner, U, columns=cols, rows=data, digest="30 findings")
+
+    as_objects = est_tokens(json.dumps([dict(zip(cols, d)) for d in data],
+                                       separators=(",", ":")))
+    as_rows = est_tokens(json.dumps({"columns": cols, "rows": data},
+                                    separators=(",", ":")))
+    # 28% measured; the floor guards the property, not the exact number
+    assert as_rows < as_objects * 0.80, f"rows {as_rows} vs objects {as_objects}"
+
+    stored = api.get_state(planner, [U], mode="table", budget_tokens=8000)["items"][0]
+    assert stored["format"] == "tsv"
+    assert "src/mod29.py" in stored["content"]      # round-trips as real records
+    assert r["version"] == 1
+
+
+def test_rows_validates_shape(bb, planner):
+    api, _ = bb
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, rows=[["a"]], digest="d")            # no columns
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, columns=["a", "b"], rows=[["x"]], digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, columns=["a"], rows=[{"a": 1}], digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, columns=["a"], digest="d")           # no rows
+
+
+def test_a_digest_alone_is_an_entry(bb, planner):
+    api, _ = bb
+    r = api.update_state(planner, U, digest="cpu limit was never the bottleneck")
+    assert r["version"] == 1 and "digest" not in r
+    item = api.get_state(planner, [U])["items"][0]
+    assert item["digest"] == "cpu limit was never the bottleneck"
+    assert item["digest_generated"] is False
+    full = api.get_state(planner, [U], mode="full")["items"][0]
+    assert "content" not in full and "digest-only" in full["note"]
+
+
+def test_digest_from_lifts_the_summary_instead_of_repeating_it(bb, planner):
+    api, _ = bb
+    r = api.update_state(planner, U, digest_from="summary",
+                         sources=[{"ref": "server.py:125"}],
+                         body={"summary": "grant resolved once at startup",
+                               "detail": {"line": 125}})
+    assert r["warnings"] == [] and "digest" not in r
+    item = api.get_state(planner, [U])["items"][0]
+    assert item["digest"] == "grant resolved once at startup"
+    assert item["digest_generated"] is False      # authored, just not typed twice
+
+
+def test_digest_from_is_checked_not_guessed(bb, planner):
+    api, _ = bb
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, body={"summary": "x"}, digest="y", digest_from="summary")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, body={"n": 1}, digest_from="missing")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, body={"n": 1}, digest_from="n")      # not a string
+
+
+def test_write_modes_are_mutually_exclusive(bb, planner):
+    api, _ = bb
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, body={"a": 1}, columns=["a"], rows=[[1]], digest="d")

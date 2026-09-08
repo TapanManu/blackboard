@@ -30,13 +30,16 @@ TOOLS: list = [
     },
     {
         "name": "update_state",
-        "description": "Write an entry. digest required. Large file: source_path. Extend one: append.",
+        "description": "Write an entry: body, or columns+rows, or source_path, or append, or digest alone.",
         "inputSchema": {"type": "object", "required": ["uri"], "properties": {
             "uri": {"type": "string"},
             "body": {},
             "source_path": {"type": "string"},
             "append": {},
             "append_path": {"type": "string"},
+            "columns": {"type": "array", "items": {"type": "string"}},
+            "rows": {"type": "array", "items": {"type": "array"}},
+            "digest_from": {"type": "string"},
             "digest": {"type": "string"},
             "expect_version": {"type": "integer"},
             "sources": {"type": "array", "items": {"type": "object"}},
@@ -86,6 +89,8 @@ def dispatch(api, grant, name: str, args: dict) -> dict:
             expect_version=args.get("expect_version"), sources=args.get("sources"),
             confidence=args.get("confidence"), source_path=args.get("source_path"),
             append=args.get("append"), append_path=args.get("append_path"),
+            columns=args.get("columns"), rows=args.get("rows"),
+            digest_from=args.get("digest_from"),
             auto_digest_ok=bool(args.get("auto_digest")))
     if name == "list_keys":
         return api.list_keys(grant, args.get("topic"), args.get("kind"), args.get("status"),

@@ -23,7 +23,7 @@ def canonical(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _get_path(obj, path: str):
+def get_path(obj, path: str):
     cur = obj
     for part in path.split("."):
         if isinstance(cur, dict) and part in cur:
@@ -81,7 +81,7 @@ def render_entry(entry, mode: str = "digest", fields=None, body_obj=None) -> dic
                 "digest_generated": entry.digest_generated,
                 "artifact_uri": entry.artifact_uri}
     if mode == "fields":
-        sel = {f: _get_path(body_obj, f) for f in (fields or [])}
+        sel = {f: get_path(body_obj, f) for f in (fields or [])}
         return {**base, "digest": entry.digest,
                 "content": wrap_untrusted(entry.uri, entry.producer, canonical(sel))}
     if mode == "table":
@@ -93,6 +93,9 @@ def render_entry(entry, mode: str = "digest", fields=None, body_obj=None) -> dic
         if body_obj is None and entry.artifact_uri:
             return {**base, "digest": entry.digest, "artifact_uri": entry.artifact_uri,
                     "note": "body is externalized; fetch the artifact by uri"}
+        if body_obj is None:
+            return {**base, "digest": entry.digest, "sources": entry.sources,
+                    "note": "digest-only entry; the digest is the record"}
         return {**base, "digest": entry.digest, "sources": entry.sources,
                 "content": wrap_untrusted(entry.uri, entry.producer, canonical(body_obj))}
     raise ValueError(f"unknown mode {mode!r}; expected one of {MODES}")
