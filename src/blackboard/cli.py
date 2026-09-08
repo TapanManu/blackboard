@@ -152,6 +152,7 @@ def cmd_vacuum(args):
     from .store.sqlite import SQLiteStore
 
     api, store = _api(args)
+    dropped = store.forget_history(args.workspace) if args.prune_history else 0
     # Artifacts are content-addressed and shared by every workspace, but each
     # workspace is its own database. A live set built from one of them deletes
     # blobs the others are still pointing at.
@@ -176,6 +177,8 @@ def cmd_vacuum(args):
         else:
             removed += 1
     store.conn.execute("VACUUM")
+    if dropped:
+        print(f"history: {dropped} superseded versions forgotten")
     print(f"artifacts: {kept} referenced, {removed} unreferenced "
           f"{'removed' if args.yes else '(dry run; pass --yes)'}")
     return 0
@@ -226,7 +229,11 @@ def main(argv=None) -> int:
     i.set_defaults(fn=cmd_import)
 
     d = sub.add_parser("destroy"); d.add_argument("--yes", action="store_true"); d.set_defaults(fn=cmd_destroy)
-    v = sub.add_parser("vacuum"); v.add_argument("--yes", action="store_true"); v.set_defaults(fn=cmd_vacuum)
+    v = sub.add_parser("vacuum")
+    v.add_argument("--yes", action="store_true")
+    v.add_argument("--prune-history", action="store_true",
+                   help="also drop superseded versions, making their artifacts reclaimable")
+    v.set_defaults(fn=cmd_vacuum)
 
     s = sub.add_parser("serve")
     s.add_argument("--stdio", action="store_true", default=True)

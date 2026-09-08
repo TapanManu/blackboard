@@ -229,13 +229,28 @@ class SQLiteStore:
         return [(r["uri"], float(r["score"])) for r in rows]
 
     def artifact_uris(self) -> set:
-        """Artifacts the current version of each entry points at.
+        """Every artifact this database still points at, current versions and history.
 
-        Superseded versions are deliberately excluded -- `vacuum` treats a blob
-        only `entry_history` references as reclaimable.
+        History counts: `get(uri, version)` reads `entry_history.artifact_uri`, so a
+        blob only an old version references is still reachable and reclaiming it
+        turns a readable version into PAYLOAD_ERROR. Dropping the history rows is a
+        separate, explicit decision -- see `forget_history`.
         """
         return {r[0] for r in self.conn.execute(
-            "SELECT artifact_uri FROM entry WHERE artifact_uri IS NOT NULL")}
+            "SELECT artifact_uri FROM entry WHERE artifact_uri IS NOT NULL "
+            "UNION SELECT artifact_uri FROM entry_history WHERE artifact_uri IS NOT NULL")}
+
+    def forget_history(self, workspace: str) -> int:
+        """Drop superseded versions of this workspace's entries. Current versions stay.
+
+        The blobs they referenced become genuinely unreferenced, so a following
+        `vacuum` pass reclaims them.
+        """
+        cur = self.conn.execute(
+            "DELETE FROM entry_history WHERE uri IN (SELECT uri FROM entry WHERE workspace=?)",
+            (workspace,))
+        self.conn.commit()
+        return cur.rowcount
 
     def history(self, uri: str) -> list:
         return [dict(r) for r in self.conn.execute(

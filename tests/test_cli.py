@@ -64,17 +64,46 @@ def test_revoke_kills_a_token(capsys):
         resolve(store2, token)
 
 
-def test_vacuum_reports_unreferenced_artifacts(capsys):
-    main(["-w", "vac", "init"]); capsys.readouterr()
-    api, store = config.open_workspace("vac")
+def _two_versions_of_a_big_entry(ws="vac"):
     from blackboard.auth import issue
-    _t, g = issue(store, "vac", "planner", ["**"], agent_id="p")
-    api.update_state(g, "bb://vac/t/fact/a", body={"b": "z" * 20000}, digest="d")
-    api.update_state(g, "bb://vac/t/fact/a", body={"b": "y" * 20000}, digest="d")
+    main(["-w", ws, "init"])
+    api, store = config.open_workspace(ws)
+    _t, g = issue(store, ws, "planner", ["**"], agent_id="p")
+    api.update_state(g, f"bb://{ws}/t/fact/a", body={"b": "z" * 20000}, digest="d")
+    api.update_state(g, f"bb://{ws}/t/fact/a", body={"b": "y" * 20000}, digest="d")
     store.close()
-    assert main(["-w", "vac", "vacuum"]) == 0
+
+
+def test_vacuum_keeps_the_artifact_an_old_version_still_reads(capsys):
+    """get(uri, version) reads entry_history.artifact_uri, so history is a reference."""
+    _two_versions_of_a_big_entry(); capsys.readouterr()
+    assert main(["-w", "vac", "vacuum", "--yes"]) == 0
+    assert "2 referenced, 0 unreferenced" in capsys.readouterr().out
+
+    from blackboard.auth import issue
+    api, store = config.open_workspace("vac")
+    _t, g = issue(store, "vac", "planner", ["**"], agent_id="p2")
+    old = api.get_state(g, ["bb://vac/t/fact/a@1"], mode="full", budget_tokens=8000)
+    assert "z" * 100 in old["items"][0]["content"]
+    store.close()
+
+
+def test_prune_history_makes_superseded_artifacts_reclaimable(capsys):
+    """Giving up old versions is an explicit choice, not a side effect of vacuum."""
+    _two_versions_of_a_big_entry("vac2"); capsys.readouterr()
+    assert main(["-w", "vac2", "vacuum", "--prune-history", "--yes"]) == 0
     out = capsys.readouterr().out
-    assert "1 referenced" in out and "1 unreferenced" in out
+    assert "1 superseded versions forgotten" in out
+    assert "1 referenced, 1 unreferenced removed" in out
+
+    from blackboard.auth import issue
+    api, store = config.open_workspace("vac2")
+    _t, g = issue(store, "vac2", "planner", ["**"], agent_id="p2")
+    gone = api.get_state(g, ["bb://vac2/t/fact/a@1"])
+    assert gone["items"] == [] and gone["not_found"]      # the version is gone, not broken
+    cur = api.get_state(g, ["bb://vac2/t/fact/a"], mode="full", budget_tokens=8000)
+    assert "y" * 100 in cur["items"][0]["content"]        # the current one is untouched
+    store.close()
 
 
 def test_events_log_is_readable(capsys):
