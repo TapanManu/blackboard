@@ -102,16 +102,53 @@ Real measurement afterwards: 395.
 
 ## What a write costs, by shape
 
-`bench/write_shapes.py` holds one payload constant and varies only how it is
-written, counting arguments out plus result back with cl100k_base. Four writes
-that previously cost 2,435 tokens cost 1,010 — **59% less** — with the largest
-single win being `append` instead of reading an entry back to re-emit it (94%).
-The table is [`bench/RESULTS.md`](bench/RESULTS.md); the script regenerates it and
-refuses to run on the heuristic tokenizer.
+The read path had five projections and a measured saving from the start. The
+write path had one shape — hand-composed JSON — and no measurement at all. It was
+changed on an argument about cost that nothing checked. This section is that
+check.
 
-Unlike the A/B run below, this one reproduces: one command, committed payload, no
-live agents. It measures **unit cost per write**, not whether a real multi-agent
-task ends up cheaper — that is still the unrun benchmark.
+`bench/write_shapes.py` holds one payload constant (twelve real defects found
+while making these changes) and varies only the shape, counting arguments out
+plus result back with cl100k_base:
+
+| Write | Before | After | Saved |
+|---|---:|---:|---:|
+| A set of 12 findings — body objects → `columns`+`rows` | 536 | 385 | 28% |
+| A body that already summarises itself — digest typed again → `digest_from` | 589 | 489 | 17% |
+| One small fact — body restating the digest → digest alone | 101 | 58 | 43% |
+| Adding one finding — `get_state(full)` + re-emit → `append` | 1,209 | 78 | **94%** |
+| The result echo alone — digest echoed → not echoed | 81 | 26 | 68% |
+
+**Four writes end to end: 2,435 → 1,010 tokens, 59% less.** Strip the `append`
+row and the other three save 22% — the update cycle was the real defect, the rest
+is trimming.
+
+Regenerate with `.venv/bin/python bench/write_shapes.py --write`; it refuses to
+run on the heuristic tokenizer. Full table and the caveat about which bracket
+each ratio measures: [`bench/RESULTS.md`](bench/RESULTS.md).
+
+### What it cost to get there
+
+| | Before | Now |
+|---|---:|---:|
+| Tool schema, re-sent every turn to every agent | 395 | **469** (budget 600) |
+| Tests | 84 | **120** |
+
+Seventy-four tokens per turn, paid by every agent whether or not it uses a new
+shape, to make individual writes cheaper. It sits in the cacheable prefix so the
+real bill is smaller than the number suggests, but it is a standing cost and it
+leaves 131 tokens of headroom: the next argument on that surface has to displace
+something.
+
+### What this does not establish
+
+Unit cost per write, not whether a real multi-agent task ends up cheaper. The
+five-agent A/B below predates all of it and has not been re-run. A partial re-run
+on 2026-09-08 was abandoned after one lane, but it did produce one number worth
+recording: that lane spent **177,783 tokens across 27 tool calls to produce a
+9,019-token report** — a 20:1 read-to-report ratio. Both arms of an A/B do that
+same reading, so the reporting path can only act on the 9k. Whatever the board
+saves internally, it is a fraction of a cost dominated by something else.
 
 ## Not yet measured
 

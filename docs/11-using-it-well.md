@@ -104,7 +104,7 @@ Fewer than about five sub-tasks. Work that fits in one context window. Strictly
 sequential work where each step needs the full output of the last. A single
 session with no handoff and no crash risk.
 
-Below those thresholds the overhead exceeds the saving — a standing 584 tokens of
+Below those thresholds the overhead exceeds the saving — a standing 469 tokens of
 tool schema every turn, plus roughly 2,600 tokens of skill and schema per worker
 before it does anything. Just do the task.
 
