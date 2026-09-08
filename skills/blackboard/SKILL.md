@@ -9,6 +9,13 @@ A shared, durable, addressable store. It exists so **context does not have to tr
 
 **The one idea:** write state once, address it by URI, read digests by default. Your context then costs about the same at step 40 as at step 4.
 
+**The cost is asymmetric.** You compose every entry in your own context, so writing costs full price and refunds nothing. Only a *read* saves tokens, and only when the reader would otherwise re-derive the content. A write is therefore a bet that some other context — a later session, a parallel agent, a post-compaction you — will read it. Inside one linear session that bet loses.
+
+## When NOT to use the board
+Fewer than ~5 subtasks; work that fits in one context window; strongly sequential work where each step needs the full previous output; a single session with no handoff and no crash risk. Below those thresholds the overhead exceeds the savings. Just do the task.
+
+**Never open with an unfiltered `list_keys`.** It returns every topic in the workspace. Start with `search_keys(q, topic)` for what you actually need; an empty result IS the answer, and means nothing on the board relates to your task. Scope any listing with `topic=`.
+
 ## Address format
 ```
 bb://<workspace>/<topic>/<kind>/<id>[@<version>]
@@ -38,6 +45,12 @@ Every entry has a mandatory ≤200-token `digest`. **Start at `digest`.** Escala
 Escalating to `full` on every input recreates exactly the context bloat the board exists to prevent — and you paid for the digest too. If you're escalating more than a third of the time, the digests are the problem; say so.
 
 Every read takes `budget_tokens`. The server truncates to it and tells you what it omitted. Set it honestly; it protects you.
+
+## Before each write, answer this
+
+> Which context reads this instead of re-deriving it?
+
+A concrete answer — "the session that resumes this triage", "the parent collecting three workers" — means write it. No answer means the entry is overhead; keep it in your reply instead. Volume is not thoroughness: one durable state entry a resuming agent can act on beats eight per-item results nobody reads.
 
 ## Write discipline
 - **`digest` is mandatory.** Write it for a reader who will make decisions from the digest alone — because they will, and if it omits what mattered nothing will flag it.
@@ -85,6 +98,3 @@ Prompt caching matches an **exact prefix**: change one byte at position *i* and 
 ```
 
 Injecting a `get_state` result into a pinned preamble invalidates the cache on every read and makes the board a net loss. Kept in the tail, the same reads are what let the prefix stay warm across turns and across sessions.
-
-## When NOT to use the board
-Fewer than ~5 subtasks; work that fits in one context window; strongly sequential work where each step needs the full previous output; a single session with no handoff and no crash risk. Below those thresholds the overhead exceeds the savings. Just do the task.
