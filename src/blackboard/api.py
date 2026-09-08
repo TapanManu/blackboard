@@ -27,6 +27,40 @@ DEFAULT_BUDGET = 2000
 MAX_BUDGET = 8000
 
 
+def _append_into(body, value, at: Optional[str]):
+    """Extend a list inside `body` with `value`, creating the list if absent.
+
+    `at` is a dotted path; None means the body itself is the list. Mutates and
+    returns `body` -- the caller owns it, it came straight out of the store.
+    """
+    if at is None:
+        if body is None:
+            body = []
+        if not isinstance(body, list):
+            raise PayloadError("append without append_path needs a list body",
+                               got=type(body).__name__)
+        target = body
+    else:
+        if not isinstance(body, dict):
+            raise PayloadError("append_path needs an object body",
+                               got=type(body).__name__)
+        cur, parts = body, at.split(".")
+        for p in parts[:-1]:
+            nxt = cur.get(p)
+            if nxt is None:
+                nxt = cur[p] = {}
+            elif not isinstance(nxt, dict):
+                raise PayloadError("append_path crosses a non-object", at=at, segment=p)
+            cur = nxt
+        target = cur.get(parts[-1])
+        if target is None:
+            target = cur[parts[-1]] = []
+        elif not isinstance(target, list):
+            raise PayloadError("append target is not a list", at=at)
+    target.extend(value if isinstance(value, list) else [value])
+    return body
+
+
 class Blackboard:
     def __init__(self, store, artifacts, workspace: str):
         self.store = store
@@ -80,14 +114,31 @@ class Blackboard:
                      expect_version: Optional[int] = None, sources=None,
                      confidence: Optional[float] = None, schema_id: Optional[str] = None,
                      source_path: Optional[str] = None, auto_digest_ok: bool = False,
-                     status: str = "accepted") -> dict:
+                     status: str = "accepted", append=None,
+                     append_path: Optional[str] = None) -> dict:
         u = uri_mod.parse(uri)
         check(grant, "write", u.workspace, u.path)
-        if (body is None) == (source_path is None):
-            raise PayloadError("provide exactly one of body or source_path")
 
         generated = False
         artifact_uri_ = None
+
+        if append is not None:
+            # Server-side read-modify-write: the existing body never crosses the
+            # wire, so extending an entry costs the delta, not the whole entry.
+            if body is not None or source_path is not None:
+                raise PayloadError("append is exclusive with body and source_path")
+            prev = self.store.get(u.base())
+            if prev is None:
+                raise NotFound("append target does not exist", uri=u.base())
+            body = _append_into(self._resolve_body(prev), append, append_path)
+            if expect_version is None:
+                expect_version = prev.version
+            if not digest:
+                digest, generated = prev.digest, prev.digest_generated
+            if sources is None:
+                sources = prev.sources
+        elif (body is None) == (source_path is None):
+            raise PayloadError("provide exactly one of body or source_path")
 
         if source_path is not None:
             # Delta12: the DAEMON reads the file. Bulk content never enters a context window.
@@ -139,12 +190,18 @@ class Blackboard:
 
         warnings = []
         if generated:
-            warnings.append("digest was auto-generated; nobody described this entry on purpose")
+            warnings.append("AUTO_DIGEST")
         if body is not None and not sources and u.kind in ("fact", "result", "decision"):
-            warnings.append("no sources cited; unsourced claims are not verifiable")
-        return {"uri": e.uri, "version": e.version, "digest": e.digest,
-                "est_tokens": e.est_tokens, "artifact_uri": e.artifact_uri,
-                "warnings": warnings}
+            warnings.append("NO_SOURCES")
+        out = {"uri": e.uri, "version": e.version,
+               "est_tokens": e.est_tokens, "warnings": warnings}
+        if e.artifact_uri:
+            out["artifact_uri"] = e.artifact_uri
+        # The author composed this digest; echoing it back bills them for it twice.
+        # Only a digest they did not write is news to them.
+        if generated:
+            out["digest"] = e.digest
+        return out
 
     # -------------------------------------------------------------- list_keys
     def list_keys(self, grant, topic: Optional[str] = None, kind: Optional[str] = None,
