@@ -2,7 +2,7 @@
   "mcpServers": {
     "blackboard": {
       "command": "uvx",
-      "args": ["--from", ".", "blackboard-mcp", "--workspace", "acme-audit", "serve", "--stdio"],
+      "args": ["--from", ".[mcp]", "blackboard-mcp", "--workspace", "acme-audit", "serve", "--stdio"],
       "env": {
         "BLACKBOARD_TOKEN": "${BB_PLANNER_TOKEN}",
         "BLACKBOARD_ROLE": "planner"

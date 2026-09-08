@@ -106,3 +106,25 @@ def test_ephemeral_persists_nothing(capsys):
     assert main(["-w", "ghost", "--ephemeral", "status"]) == 0
     capsys.readouterr()
     assert not config.db_path("ghost").exists()
+
+
+def test_vacuum_keeps_artifacts_another_workspace_references(capsys):
+    """Artifacts are shared across workspaces; each workspace is its own database."""
+    from blackboard.auth import issue
+    main(["-w", "vac_a", "init"]); main(["-w", "vac_b", "init"]); capsys.readouterr()
+
+    api_b, store_b = config.open_workspace("vac_b")
+    _t, gb = issue(store_b, "vac_b", "planner", ["**"], agent_id="p")
+    api_b.update_state(gb, "bb://vac_b/t/fact/big", body={"b": "z" * 20000}, digest="d")
+    store_b.close()
+
+    # vac_a references nothing; the blob it must not touch belongs to vac_b.
+    assert main(["-w", "vac_a", "vacuum", "--yes"]) == 0
+    assert "1 referenced, 0 unreferenced" in capsys.readouterr().out
+
+    api_b, store_b = config.open_workspace("vac_b")
+    _t, gb = issue(store_b, "vac_b", "planner", ["**"], agent_id="p2")
+    got = api_b.get_state(gb, ["bb://vac_b/t/fact/big"], mode="full",
+                          budget_tokens=8000)["items"][0]
+    assert "z" * 100 in got["content"]
+    store_b.close()

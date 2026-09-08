@@ -100,14 +100,20 @@ def dispatch(api, grant, name: str, args: dict) -> dict:
 
 
 def _grant_for(store, workspace: str):
-    """Local mode: token from env, or a self-issued full grant for single-user use."""
+    """Local mode: token from env, or a self-issued full grant for single-user use.
+
+    Returns a callable, not a Grant. A token is re-resolved on every call, so
+    revoking it or letting its TTL lapse takes effect on a server already running
+    -- resolving once at startup made both inert for the life of the process.
+    """
     tok = os.environ.get("BLACKBOARD_TOKEN")
     if tok:
-        return resolve(store, tok)
+        resolve(store, tok)          # fail at startup on a token that is already bad
+        return lambda: resolve(store, tok)
     role = os.environ.get("BLACKBOARD_ROLE", "planner")
     _t, g = issue(store, workspace, role, ["**"],
                   agent_id=os.environ.get("BLACKBOARD_AGENT_ID", f"local-{role}"))
-    return g
+    return lambda: g
 
 
 def serve_stdio(workspace: str) -> int:
@@ -125,7 +131,7 @@ def serve_stdio(workspace: str) -> int:
     import anyio
 
     api, store = config.open_workspace(workspace)
-    grant = _grant_for(store, workspace)
+    grant_of = _grant_for(store, workspace)
 
     _TOOLS = [Tool(name=t["name"], description=t["description"],
                    input_schema=t["inputSchema"]) for t in TOOLS]
@@ -135,7 +141,7 @@ def serve_stdio(workspace: str) -> int:
 
     async def on_call_tool(_ctx, params) -> "CallToolResult":
         try:
-            result = dispatch(api, grant, params.name, dict(params.arguments or {}))
+            result = dispatch(api, grant_of(), params.name, dict(params.arguments or {}))
             is_error = False
         except BlackboardError as ex:
             result, is_error = ex.to_dict(), True

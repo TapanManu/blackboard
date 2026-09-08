@@ -1,6 +1,6 @@
 """Topic isolation must be enforced by the daemon, never by the prompt (Delta10 / Q15)."""
 import pytest
-from blackboard.auth import issue
+from blackboard.auth import issue, token_hash
 from blackboard.errors import Forbidden
 
 CAR = "bb://testws/domain.automotive/fact/brake-assy"
@@ -73,3 +73,20 @@ def test_wrong_workspace_is_rejected(bb, planner):
     api, _ = bb
     with pytest.raises(Forbidden):
         api.get_state(planner, ["bb://otherws/domain.automotive/fact/x"])
+
+
+def test_server_resolves_the_grant_per_call_not_at_startup(tmp_path, monkeypatch):
+    """A revoked or expired token must stop working on a server already running."""
+    from blackboard.server import _grant_for
+    from blackboard.store.sqlite import SQLiteStore
+
+    store = SQLiteStore(str(tmp_path / "bb.db"))
+    token, _g = issue(store, "ws", "planner", ["**"], agent_id="p")
+    monkeypatch.setenv("BLACKBOARD_TOKEN", token)
+
+    grant_of = _grant_for(store, "ws")       # startup
+    assert grant_of().agent_id == "p"
+    store.delete_grant(token_hash(token))
+    with pytest.raises(Forbidden):
+        grant_of()                            # next tool call, same process
+    store.close()

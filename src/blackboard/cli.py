@@ -149,9 +149,19 @@ def cmd_destroy(args):
 
 
 def cmd_vacuum(args):
+    from .store.sqlite import SQLiteStore
+
     api, store = _api(args)
-    rows = store.query(args.workspace, "**", None, None, "created", 1000000)
-    live = {e.artifact_uri for e in rows if e.artifact_uri}
+    # Artifacts are content-addressed and shared by every workspace, but each
+    # workspace is its own database. A live set built from one of them deletes
+    # blobs the others are still pointing at.
+    live = set(store.artifact_uris())
+    for db in sorted(config.home().glob("*.db")):
+        other = SQLiteStore(str(db))
+        try:
+            live |= other.artifact_uris()
+        finally:
+            other.close()
     root = config.artifacts_path()
     removed = kept = 0
     for f in root.rglob("*"):

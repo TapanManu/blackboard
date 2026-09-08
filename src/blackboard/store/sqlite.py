@@ -228,6 +228,15 @@ class SQLiteStore:
             return []
         return [(r["uri"], float(r["score"])) for r in rows]
 
+    def artifact_uris(self) -> set:
+        """Artifacts the current version of each entry points at.
+
+        Superseded versions are deliberately excluded -- `vacuum` treats a blob
+        only `entry_history` references as reclaimable.
+        """
+        return {r[0] for r in self.conn.execute(
+            "SELECT artifact_uri FROM entry WHERE artifact_uri IS NOT NULL")}
+
     def history(self, uri: str) -> list:
         return [dict(r) for r in self.conn.execute(
             "SELECT version,digest,producer,status,created_at FROM entry_history "
