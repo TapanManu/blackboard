@@ -1,6 +1,6 @@
 import json
 from blackboard.render import to_tsv, pack, canonical, wrap_untrusted
-from blackboard.tokens import est_tokens
+from blackboard.tokens import est_tokens, require_exact
 from blackboard.digest import auto_digest, truncate_to_tokens
 
 
@@ -11,6 +11,10 @@ def _rows(n=30):
 
 
 def test_tsv_is_materially_smaller_than_json():
+    # Without the exact tokenizer this compares a heuristic number (+26%, biased
+    # high, and not evenly across shapes) against a threshold measured with
+    # cl100k_base -- it reads as a TSV regression when it is a missing dependency.
+    require_exact("the TSV-vs-JSON saving")
     rows = _rows(30)
     tsv, js = to_tsv(rows), json.dumps(rows, separators=(",", ":"))
     t_tsv, t_json = est_tokens(tsv), est_tokens(js)

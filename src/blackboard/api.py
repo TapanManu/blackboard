@@ -32,9 +32,9 @@ def _rows_to_body(columns, rows) -> list:
 
     `table` mode has rendered result sets this way since Delta5; this is the same
     idea on the way in: the author stops composing a key for every value. Measured
-    at 28% fewer tokens for a 30-row set -- less than the 44.6% `table` saves on the
+    at 34% fewer tokens for a 30-row set -- less than the 44.6% `table` saves on the
     read side, because the arguments are still JSON arrays and keep their quotes and
-    commas. Pure TSV would reach ~33%, and lose every value's type to do it.
+    commas. Pure TSV would reach 35.5%, and lose every value's type to do it.
     """
     if not columns:
         raise PayloadError("rows needs columns")

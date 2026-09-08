@@ -193,7 +193,8 @@ def test_append_respects_cas(bb, planner):
 
 def test_rows_write_costs_less_than_the_same_objects(bb, planner):
     """The write-side mirror of `table` mode: name the columns once, not per row."""
-    from blackboard.tokens import est_tokens
+    from blackboard.tokens import est_tokens, require_exact
+    require_exact("the rows-vs-objects saving")
     cols = ["file", "line", "issue", "sev"]
     data = [[f"src/mod{i}.py", 100 + i, "digest echoed back to the author", "med"]
             for i in range(30)]
@@ -204,8 +205,8 @@ def test_rows_write_costs_less_than_the_same_objects(bb, planner):
                                        separators=(",", ":")))
     as_rows = est_tokens(json.dumps({"columns": cols, "rows": data},
                                     separators=(",", ":")))
-    # 28% measured; the floor guards the property, not the exact number
-    assert as_rows < as_objects * 0.80, f"rows {as_rows} vs objects {as_objects}"
+    # 34.1% measured with cl100k_base; the floor guards the property, not the number
+    assert as_rows < as_objects * 0.72, f"rows {as_rows} vs objects {as_objects}"
 
     stored = api.get_state(planner, [U], mode="table", budget_tokens=8000)["items"][0]
     assert stored["format"] == "tsv"

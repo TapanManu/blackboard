@@ -30,7 +30,7 @@ bb://<workspace>/<topic>/<kind>/<id>[@<version>]
 | Read one thing properly | `get_state(uri, mode="full")` |
 | Find something by meaning | `search_keys(q, topic)` |
 | Save a result | `update_state(uri, body, digest, expect_version=N)` |
-| Save a **set of similar records** | `update_state(uri, columns=[...], rows=[[...],[...]], digest=...)` — name the columns once; **28% fewer tokens** than the same objects |
+| Save a **set of similar records** | `update_state(uri, columns=[...], rows=[[...],[...]], digest=...)` — name the columns once; **34% fewer tokens** than the same objects |
 | Save something **small** | `update_state(uri, digest="...")` — a digest alone is an entry; no body needed |
 | Put a **large file** on the board | `update_state(uri, source_path="/path", digest=...)` — the daemon reads it; **the file never enters your context** |
 | Put **part of** a large file on the board | add `select="spec.replicas"` (JSON path) or `lines="120-140"` — the daemon keeps only that slice, and cites the file for you |
