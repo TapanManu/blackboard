@@ -16,7 +16,7 @@ def test_auto_digest_is_marked_and_warned(bb, planner):
     api, _ = bb
     r = api.update_state(planner, U, body={"a": 1}, auto_digest_ok=True)
     assert r["digest"].startswith("[auto]")
-    assert any("auto-generated" in w for w in r["warnings"])
+    assert "AUTO_DIGEST" in r["warnings"]
     got = api.get_state(planner, [U])["items"][0]
     assert got["digest_generated"] is True
 
@@ -132,3 +132,60 @@ def test_not_found_is_reported_not_raised(bb, planner):
     api, _ = bb
     out = api.get_state(planner, ["bb://testws/t/fact/nope"])
     assert out["items"] == [] and out["not_found"] == ["bb://testws/t/fact/nope"]
+
+
+def test_write_does_not_echo_an_authored_digest(bb, planner):
+    api, _ = bb
+    r = api.update_state(planner, U, body={"a": 1}, digest="a brake assembly",
+                         sources=[{"ref": "spec.md:12"}])
+    assert "digest" not in r                 # the author already holds it
+    assert r["version"] == 1 and r["warnings"] == []
+
+
+def test_append_extends_a_list_without_resending_the_body(bb, planner):
+    api, _ = bb
+    api.update_state(planner, U, body={"findings": [{"id": 1}]}, digest="running triage",
+                     sources=[{"ref": "log:1"}])
+    r = api.update_state(planner, U, append={"id": 2}, append_path="findings")
+    assert r["version"] == 2 and "digest" not in r
+    got = api.get_state(planner, [U], mode="full")["items"][0]
+    assert '"id":1' in got["content"] and '"id":2' in got["content"]
+    assert got["digest"] == "running triage"  # carried, so it stays authored
+
+
+def test_append_carries_provenance_and_authorship(bb, planner):
+    api, _ = bb
+    api.update_state(planner, U, body={"a": 1}, auto_digest_ok=True)
+    api.update_state(planner, U, append=2, append_path="items")
+    got = api.get_state(planner, [U])["items"][0]
+    assert got["digest_generated"] is True    # appending does not launder a stub digest
+
+
+def test_append_creates_a_missing_list_but_not_a_missing_entry(bb, planner):
+    from blackboard.errors import NotFound
+    api, _ = bb
+    with pytest.raises(NotFound):
+        api.update_state(planner, U, append={"id": 1}, append_path="findings")
+    api.update_state(planner, U, body={"phase": "triage"}, digest="d")
+    api.update_state(planner, U, append={"id": 1}, append_path="findings")
+    got = api.get_state(planner, [U], mode="full")["items"][0]
+    assert '"findings":[{"id":1}]' in got["content"]
+
+
+def test_append_is_exclusive_and_type_checked(bb, planner):
+    api, _ = bb
+    api.update_state(planner, U, body={"n": 1}, digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, body={"n": 2}, append=3, digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, append=3, append_path="n")   # n is not a list
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, append=3)                    # body is not a list
+
+
+def test_append_respects_cas(bb, planner):
+    api, _ = bb
+    api.update_state(planner, U, body={"f": []}, digest="d")
+    api.update_state(planner, U, body={"f": [1]}, digest="d", expect_version=1)
+    with pytest.raises(VersionConflict):
+        api.update_state(planner, U, append=2, append_path="f", expect_version=1)

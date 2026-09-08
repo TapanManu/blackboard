@@ -30,11 +30,13 @@ TOOLS: list = [
     },
     {
         "name": "update_state",
-        "description": "Write an entry. digest required. Large file: pass source_path, not body.",
+        "description": "Write an entry. digest required. Large file: source_path. Extend one: append.",
         "inputSchema": {"type": "object", "required": ["uri"], "properties": {
             "uri": {"type": "string"},
             "body": {},
             "source_path": {"type": "string"},
+            "append": {},
+            "append_path": {"type": "string"},
             "digest": {"type": "string"},
             "expect_version": {"type": "integer"},
             "sources": {"type": "array", "items": {"type": "object"}},
@@ -83,6 +85,7 @@ def dispatch(api, grant, name: str, args: dict) -> dict:
             grant, args["uri"], body=args.get("body"), digest=args.get("digest"),
             expect_version=args.get("expect_version"), sources=args.get("sources"),
             confidence=args.get("confidence"), source_path=args.get("source_path"),
+            append=args.get("append"), append_path=args.get("append_path"),
             auto_digest_ok=bool(args.get("auto_digest")))
     if name == "list_keys":
         return api.list_keys(grant, args.get("topic"), args.get("kind"), args.get("status"),

@@ -24,6 +24,7 @@ bb://<workspace>/<topic>/<kind>/<id>[@<version>]
 | Find something by meaning | `search_keys(q, topic)` |
 | Save a result | `update_state(uri, body, digest, expect_version=N)` |
 | Put a **large file** on the board | `update_state(uri, source_path="/path", digest=...)` — the daemon reads it; **the file never enters your context** |
+| Add to an entry already on the board | `update_state(uri, append={...}, append_path="findings")` — the daemon does the read-modify-write; **the existing body never enters your context** |
 | Record provenance | `link_state(src, "derived_from", dst)` |
 
 There is no lock tool, no claim tool, and no orientation tool. Coordination happens through conventions below.
@@ -43,6 +44,7 @@ Every read takes `budget_tokens`. The server truncates to it and tells you what 
 - **Cite sources.** `file:line`, tool output, or an upstream `bb://` URI.
 - **CAS, don't clobber.** Pass `expect_version`. A 409 means someone else wrote; re-read and merge. Never retry blind.
 - **Payloads >10 KB are externalized automatically.** Keep the digest sharp regardless.
+- **Extend, don't rewrite.** Adding one item to a running entry is `append` (plus `append_path` for a list nested in an object); it costs the delta. Reading the entry back to re-emit it with one more item costs the whole entry, twice. `append` carries the previous digest and sources forward — pass a new `digest` only when the summary actually changed.
 - **Never read a large file just to put it on the board.** Use `source_path` — reading it first means you already paid for the tokens, and offloading afterwards refunds nothing.
 - **Conclusions and evidence, not deliberation.** Your retries and dead ends are deliberately discarded — keeping them is the distraction problem the board exists to solve.
 - **Never overwrite an entry you did not produce.** Write a new entry and `link_state(new, "supersedes", old)` with your reason.
