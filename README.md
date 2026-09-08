@@ -61,6 +61,7 @@ Two other measurements:
 |---|---|
 | Table data written as TSV instead of JSON | **44.6% fewer tokens** (30 rows) |
 | The tool descriptions agents carry every turn | **395 tokens** (self-imposed limit: 600) |
+| Five agents, one task, live A/B | **93.6% less** parent context (36,766 → 2,357 tok), n=1 |
 
 Full detail and the bugs measurement caught: **[Measured results](MEASURED.md)**.
 
@@ -259,12 +260,13 @@ and a maintenance agent.
 - A single session with no handoff and no risk of crashing.
 
 **What is proven and what is not.** The board demonstrably does what it claims at
-the cost it claims. It has *not* been shown to make a real multi-agent task
-cheaper or faster overall — that needs live model runs comparing approaches, which
-is the next piece of work. The
-[benchmark plan](docs/06-benchmark-plan.md) defines it and
-[the honest case](docs/10-is-it-worth-building.md) states in advance what result would mean the
-project should stop.
+the cost it claims. One live five-agent A/B run has now been recorded — 93.6% less
+parent context, 39% less total agent spend, no quality loss
+([Measured results](MEASURED.md)) — but that is a single run on this repository,
+not the four-arm benchmark in [docs/06](docs/06-benchmark-plan.md), which remains
+unrun. One data point is not a demonstration.
+[The honest case](docs/10-is-it-worth-building.md) states in advance what result
+would mean the project should stop.
 
 **The biggest risk.** An agent decides based on a summary. If the summary leaves
 out the thing that mattered, the agent is confidently wrong and *nothing flags

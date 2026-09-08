@@ -32,6 +32,51 @@ is flat, so the saving is a function of how much work the board holds.** The rat
 is a property of the workload, not of the system — a board of tiny entries has
 little to save. What the system guarantees is the flat line.
 
+## One live A/B run — not from the test suite
+
+Everything above comes from `pytest`. This section does not: it is a single live
+run on 2026-09-07, with real agents doing real analysis, recorded because
+[the benchmark plan](docs/06-benchmark-plan.md) had produced nothing yet and a
+one-off is better than an assumption. **n=1.** Treat it as a data point, not a
+result.
+
+**Task:** five agents, five questions about this repository (docs contradictions,
+module load-bearing analysis, test coverage, setup-bundle consistency,
+deferred-layer triggers). Identical prompts and identical requested depth in both
+arms; only the reporting path differed. Arm A returned prose. Arm B wrote a digest
+plus body to `bb://sedai/tasks.<lane>/result/exp1` and replied in three lines.
+
+| | Arm A (no board) | Arm B (board) | Delta |
+|---|---|---|---|
+| Parent context | 36,766 tok | **2,357 tok** | **-93.6%** |
+| — agent replies | 36,766 | 957 | |
+| — digest read-back | 0 | 1,400 | |
+| Internal agent spend | 607,120 tok | 372,112 tok | -38.7% |
+| Wall clock, slowest agent | 483 s | 376 s | -22.2% |
+
+Arm B also kept what it found: 20,895 tokens of full bodies on the board,
+addressable for the 1,400 spent reading five digests.
+
+**Quality parity held.** Both arms independently found the same core defects. Arm
+B additionally found three Arm A missed: `.mcp.json.example`'s `uvx --from .`
+omits the `mcp` extra; `server.py:125` resolves the grant once at process start,
+so revoke and TTL are inert for a running server; `vacuum` scopes its live set to
+one workspace while artifacts are shared across all of them.
+
+**A prediction this run falsified.** The expectation was that Arm B would cost
+*more* internally, since each worker loads ~2,600 tokens of skill and schema
+before starting. It cost 39% less — composing a 9,500-token prose report is more
+expensive than writing a digest plus a body, and the write cost dominates the load
+cost.
+
+**What this does not establish.** One run, one repo, one task shape. No
+repetition, so run-to-run variance is unmeasured. Both arms used the same model,
+so this isolates the reporting path and nothing else. Arm A's prose is richer per
+finding than Arm B's digest — the honest claim is that the digests answered the
+same questions *at decision level*, with detail retrievable at 3,000-6,000 tokens
+per entry. The four-arm design in `docs/06` (n=5 paired, Task Success Rate as a
+gate) remains unrun.
+
 ## Corrections forced by measurement
 
 **The token estimator was wrong by up to +106%, not the ±15% originally documented.**
@@ -57,7 +102,9 @@ Real measurement afterwards: 395.
 
 ## Not yet measured
 
-Everything in [How performance will be proven](docs/06-benchmark-plan.md) — the four approaches being compared (A–D), TRR, TTS, PEI, Task Success
-Rate, coordination overhead. Those need real model runs, and the stop criteria in
-[Is this worth building — the honest case](docs/10-is-it-worth-building.md) are decided from them. Nothing here says the board is worth it
-on a real task; it says the store does what it claims, at the cost it claims.
+The four-arm comparison (A–D), TRR, TTS, PEI and Task Success Rate in
+[How performance will be proven](docs/06-benchmark-plan.md). The single A/B run
+above covers one cell of that grid (roughly arms B vs C, on one task, n=1) and
+does not substitute for it. Those need real model runs, and the stop criteria in
+[Is this worth building — the honest case](docs/10-is-it-worth-building.md) are
+decided from them.
