@@ -33,6 +33,8 @@ bb://<workspace>/<topic>/<kind>/<id>[@<version>]
 | Save a **set of similar records** | `update_state(uri, columns=[...], rows=[[...],[...]], digest=...)` — name the columns once; **28% fewer tokens** than the same objects |
 | Save something **small** | `update_state(uri, digest="...")` — a digest alone is an entry; no body needed |
 | Put a **large file** on the board | `update_state(uri, source_path="/path", digest=...)` — the daemon reads it; **the file never enters your context** |
+| Put **part of** a large file on the board | add `select="spec.replicas"` (JSON path) or `lines="120-140"` — the daemon keeps only that slice, and cites the file for you |
+| Write **several entries** in one call | `update_state(writes=[{...}, {...}])` — each keeps its own CAS and reports its own result |
 | Add to an entry already on the board | `update_state(uri, append={...}, append_path="findings")` — the daemon does the read-modify-write; **the existing body never enters your context** |
 | Record provenance | `link_state(src, "derived_from", dst)` |
 
@@ -62,7 +64,8 @@ A concrete answer — "the session that resumes this triage", "the parent collec
 - **CAS, don't clobber.** Pass `expect_version`. A 409 means someone else wrote; re-read and merge. Never retry blind.
 - **Payloads >10 KB are externalized automatically.** Keep the digest sharp regardless.
 - **Extend, don't rewrite.** Adding one item to a running entry is `append` (plus `append_path` for a list nested in an object); it costs the delta. Reading the entry back to re-emit it with one more item costs the whole entry, twice. `append` carries the previous digest and sources forward — pass a new `digest` only when the summary actually changed.
-- **Never read a large file just to put it on the board.** Use `source_path` — reading it first means you already paid for the tokens, and offloading afterwards refunds nothing.
+- **Never read a large file just to put it on the board.** Use `source_path` — reading it first means you already paid for the tokens, and offloading afterwards refunds nothing. If you only need part of it, add `select` or `lines` and the rest is never stored either.
+- **Batch related writes.** `writes=[...]` pays the call overhead once. It is not a transaction: one entry's conflict leaves the others written, and the results come back positionally, so check them.
 - **Conclusions and evidence, not deliberation.** Your retries and dead ends are deliberately discarded — keeping them is the distraction problem the board exists to solve.
 - **Never overwrite an entry you did not produce.** Write a new entry and `link_state(new, "supersedes", old)` with your reason.
 

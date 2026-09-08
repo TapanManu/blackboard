@@ -40,6 +40,9 @@ TOOLS: list = [
             "columns": {"type": "array", "items": {"type": "string"}},
             "rows": {"type": "array", "items": {"type": "array"}},
             "digest_from": {"type": "string"},
+            "select": {"type": "string"},
+            "lines": {"type": "string"},
+            "writes": {"type": "array", "items": {"type": "object"}},
             "digest": {"type": "string"},
             "expect_version": {"type": "integer"},
             "sources": {"type": "array", "items": {"type": "object"}},
@@ -84,13 +87,27 @@ def dispatch(api, grant, name: str, args: dict) -> dict:
         return api.get_state(grant, args["uris"], args.get("mode", "digest"),
                              args.get("fields"), args.get("budget_tokens", 2000))
     if name == "update_state":
+        if "writes" in args:
+            # Not atomic, deliberately: each entry keeps its own CAS, so one
+            # conflict must not roll back the entries that did land. Errors come
+            # back positionally instead of as an exception.
+            out = []
+            for w in args["writes"]:
+                try:
+                    if not isinstance(w, dict) or "writes" in w:
+                        raise BlackboardError("each write is an update_state argument object")
+                    out.append(dispatch(api, grant, "update_state", w))
+                except BlackboardError as ex:
+                    out.append(ex.to_dict())
+            return {"results": out}
         return api.update_state(
             grant, args["uri"], body=args.get("body"), digest=args.get("digest"),
             expect_version=args.get("expect_version"), sources=args.get("sources"),
             confidence=args.get("confidence"), source_path=args.get("source_path"),
             append=args.get("append"), append_path=args.get("append_path"),
             columns=args.get("columns"), rows=args.get("rows"),
-            digest_from=args.get("digest_from"),
+            digest_from=args.get("digest_from"), select=args.get("select"),
+            lines=args.get("lines"),
             auto_digest_ok=bool(args.get("auto_digest")))
     if name == "list_keys":
         return api.list_keys(grant, args.get("topic"), args.get("kind"), args.get("status"),

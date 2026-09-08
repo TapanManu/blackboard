@@ -262,3 +262,77 @@ def test_write_modes_are_mutually_exclusive(bb, planner):
     api, _ = bb
     with pytest.raises(PayloadError):
         api.update_state(planner, U, body={"a": 1}, columns=["a"], rows=[[1]], digest="d")
+
+
+def test_select_stores_only_the_slice_the_file_never_enters_context(bb, planner, tmp_path):
+    """Delta12, one level finer: the daemon reads the file AND drops what nobody asked for."""
+    api, _ = bb
+    f = tmp_path / "cluster.json"
+    f.write_text(json.dumps({"meta": {"name": "prod"},
+                             "spec": {"replicas": 3, "image": "app:1.4"},
+                             "noise": ["x" * 200 for _ in range(500)]}))
+    r = api.update_state(planner, U, source_path=str(f), select="spec",
+                         digest="the replica spec")
+    assert "artifact_uri" not in r          # the slice is small; nothing externalized
+    full = api.get_state(planner, [U], mode="full")["items"][0]
+    assert '"replicas":3' in full["content"]
+    assert "xxxx" not in full["content"]          # the 100 KB of noise was never stored
+    assert r["est_tokens"] < 40
+
+
+def test_select_records_provenance_it_did_not_have_to_be_told(bb, planner, tmp_path):
+    api, _ = bb
+    f = tmp_path / "cluster.json"
+    f.write_text(json.dumps({"spec": {"replicas": 3}}))
+    api.update_state(planner, U, source_path=str(f), select="spec", digest="d")
+    full = api.get_state(planner, [U], mode="full")["items"][0]
+    assert full["sources"][0]["ref"] == "cluster.json#spec"
+    assert len(full["sources"][0]["sha256"]) == 64
+
+
+def test_lines_slices_a_text_file(bb, planner, tmp_path):
+    api, _ = bb
+    f = tmp_path / "server.log"
+    f.write_text("\n".join(f"line {i}" for i in range(1, 201)))
+    api.update_state(planner, U, source_path=str(f), lines="120-122", digest="the stack trace")
+    full = api.get_state(planner, [U], mode="full")["items"][0]
+    assert "line 120\\nline 121\\nline 122" in full["content"]
+    assert "line 119" not in full["content"] and "line 123" not in full["content"]
+
+
+def test_slice_arguments_are_validated(bb, planner, tmp_path):
+    api, _ = bb
+    f = tmp_path / "x.txt"; f.write_text("a\nb\n")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, select="spec", digest="d")          # no source_path
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, source_path=str(f), select="a", lines="1", digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, source_path=str(f), select="a", digest="d")  # not JSON
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, source_path=str(f), lines="9-2", digest="d")
+    with pytest.raises(PayloadError):
+        api.update_state(planner, U, source_path=str(f), lines="80-90", digest="d")
+
+
+def test_batch_writes_share_one_call_and_report_per_entry(bb, planner):
+    from blackboard.server import dispatch
+    api, _ = bb
+    out = dispatch(api, planner, "update_state", {"writes": [
+        {"uri": "bb://testws/domain.automotive/fact/a", "digest": "first"},
+        {"uri": "bb://testws/domain.automotive/fact/b", "digest": "second"},
+        {"uri": "bb://testws/domain.automotive/fact/c"},          # no body, no digest
+    ]})
+    assert [x.get("version") for x in out["results"]] == [1, 1, None]
+    assert out["results"][2]["error"] == "PAYLOAD_ERROR"
+    # a failure in the batch does not roll back the entries that landed
+    got = api.get_state(planner, ["bb://testws/domain.automotive/fact/a",
+                                  "bb://testws/domain.automotive/fact/b"])
+    assert [i["digest"] for i in got["items"]] == ["first", "second"]
+
+
+def test_batch_refuses_to_nest(bb, planner):
+    from blackboard.server import dispatch
+    api, _ = bb
+    out = dispatch(api, planner, "update_state", {"writes": [{"writes": []}]})
+    assert out["results"][0]["error"] == "ERROR"

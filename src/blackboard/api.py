@@ -47,6 +47,36 @@ def _rows_to_body(columns, rows) -> list:
     return [dict(zip(columns, r)) for r in rows]
 
 
+def _slice_file(raw: bytes, select: Optional[str], lines: Optional[str], path) -> object:
+    """Keep only the part of a file that was asked for.
+
+    `source_path` already spares the author from reading a file into context
+    (Delta12); this spares the board from storing the parts nobody wanted.
+    """
+    if lines is not None:
+        head, _, tail = str(lines).partition("-")
+        try:
+            lo, hi = int(head), int(tail or head)
+        except ValueError:
+            raise PayloadError("lines must be 'N' or 'N-M'", lines=lines) from None
+        if lo < 1 or hi < lo:
+            raise PayloadError("lines is 1-indexed and must not be empty", lines=lines)
+        text = raw.decode(errors="replace").splitlines()
+        if lo > len(text):
+            raise PayloadError("lines starts past end of file", lines=lines, of=len(text))
+        return {"source": path.name, "lines": f"{lo}-{min(hi, len(text))}",
+                "text": "\n".join(text[lo - 1:hi])}
+    try:
+        doc = json.loads(raw.decode())
+    except (UnicodeDecodeError, ValueError):
+        raise PayloadError("select needs a JSON file; use lines for text",
+                           path=str(path)) from None
+    got = get_path(doc, select)
+    if got is None:
+        raise PayloadError("select matched nothing", path=str(path), select=select)
+    return got
+
+
 def _append_into(body, value, at: Optional[str]):
     """Extend a list inside `body` with `value`, creating the list if absent.
 
@@ -136,7 +166,8 @@ class Blackboard:
                      source_path: Optional[str] = None, auto_digest_ok: bool = False,
                      status: str = "accepted", append=None,
                      append_path: Optional[str] = None, columns=None, rows=None,
-                     digest_from: Optional[str] = None) -> dict:
+                     digest_from: Optional[str] = None, select: Optional[str] = None,
+                     lines: Optional[str] = None) -> dict:
         u = uri_mod.parse(uri)
         check(grant, "write", u.workspace, u.path)
 
@@ -152,7 +183,21 @@ class Blackboard:
             body = _rows_to_body(columns, rows)
         elif columns is not None:
             raise PayloadError("columns needs rows")
-        if digest_from and source_path is not None:
+        if select is not None or lines is not None:
+            if source_path is None:
+                raise PayloadError("select and lines apply to source_path")
+            if select is not None and lines is not None:
+                raise PayloadError("pass select or lines, not both")
+            p = Path(source_path).expanduser().resolve()
+            if not p.is_file():
+                raise PayloadError("source_path is not a readable file", path=str(p))
+            raw = p.read_bytes()
+            body = _slice_file(raw, select, lines, p)
+            if sources is None:
+                sources = [{"ref": f"{p.name}#{select if select is not None else lines}",
+                            "sha256": sha256_bytes(raw)}]
+            source_path = None          # the slice is the body now; store it normally
+        elif digest_from and source_path is not None:
             raise PayloadError("digest_from reads the body; source_path has none")
 
         if append is not None:
