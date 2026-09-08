@@ -16,7 +16,7 @@ see [Scope: what is built and what is held back](docs/08-scope-and-layers.md).
 ## Running things
 
 ```bash
-uv run pytest -q                              # 87 tests, ~3s
+uv run pytest -q                              # 120 tests, ~3s
 uv run blackboard-mcp -w <workspace> init
 uv run blackboard-mcp -w <workspace> grant --role planner --quiet
 ```

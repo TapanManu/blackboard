@@ -80,7 +80,7 @@ uv venv --python 3.12 && uv pip install -e '.[dev,mcp]'
 uv run blackboard-mcp -w myproject init
 uv run blackboard-mcp -w myproject grant --role planner --quiet
 
-uv run pytest -q        # 87 tests
+uv run pytest -q        # 120 tests
 ```
 
 Connect it to Claude Code by copying `.mcp.json.example` to `.mcp.json`. Any
