@@ -100,6 +100,19 @@ Real measurement afterwards: 395.
 | `export` → `import` into a different workspace was rejected, making a "portable dump" unportable | `test_cli.py` | rebase the workspace segment on import; `--keep-workspace` for exact restore |
 | `topic/**` did not match the bare topic itself | `test_uri.py` glob table | `/**` compiles to `(?:/.*)?` |
 
+## What a write costs, by shape
+
+`bench/write_shapes.py` holds one payload constant and varies only how it is
+written, counting arguments out plus result back with cl100k_base. Four writes
+that previously cost 2,435 tokens cost 1,010 — **59% less** — with the largest
+single win being `append` instead of reading an entry back to re-emit it (94%).
+The table is [`bench/RESULTS.md`](bench/RESULTS.md); the script regenerates it and
+refuses to run on the heuristic tokenizer.
+
+Unlike the A/B run below, this one reproduces: one command, committed payload, no
+live agents. It measures **unit cost per write**, not whether a real multi-agent
+task ends up cheaper — that is still the unrun benchmark.
+
 ## Not yet measured
 
 The four-arm comparison (A–D), TRR, TTS, PEI and Task Success Rate in
