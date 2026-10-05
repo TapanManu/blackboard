@@ -5,12 +5,15 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import config
 from .auth import ROLE_CAPS, issue, token_hash
-from .conventions import state_uri
+from .conventions import RESUME_RECIPE, state_uri
 from .errors import BlackboardError
+from .render import MODES
+from .store.base import Grant
 
 
 def _api(args):
@@ -184,6 +187,71 @@ def cmd_vacuum(args):
     return 0
 
 
+def _local_grant(workspace: str, agent_id: str) -> Grant:
+    # Whoever can run the CLI can already open the database file, so a token adds
+    # nothing here. Not persisted: hooks call these commands on every compaction.
+    return Grant(token_hash="", agent_id=agent_id, role="admin", workspace=workspace,
+                 topic_globs=["**"], caps=list(ROLE_CAPS["admin"]),
+                 issued_at=int(time.time()))
+
+
+def _print_json(obj) -> None:
+    print(json.dumps(obj, separators=(",", ":")))
+
+
+def _read_body(args):
+    if args.body_file == "-":
+        return json.loads(sys.stdin.read())
+    if args.body_file:
+        return json.loads(Path(args.body_file).read_text())
+    return json.loads(args.body) if args.body is not None else None
+
+
+def cmd_put(args):
+    api, _store = _api(args)
+    g = _local_grant(args.workspace, args.agent_id)
+    _print_json(api.update_state(g, args.uri, body=_read_body(args), digest=args.digest,
+                                 status=args.status, auto_digest_ok=args.auto_digest))
+    return 0
+
+
+def cmd_get(args):
+    api, _store = _api(args)
+    g = _local_grant(args.workspace, "cli")
+    _print_json(api.get_state(g, args.uris, mode=args.mode, budget_tokens=args.budget))
+    return 0
+
+
+def cmd_search(args):
+    api, _store = _api(args)
+    g = _local_grant(args.workspace, "cli")
+    _print_json(api.search_keys(g, args.query, topic=args.topic, limit=args.limit))
+    return 0
+
+
+def cmd_resume(args):
+    api, _store = _api(args)
+    g = _local_grant(args.workspace, "cli")
+    for tool, params in RESUME_RECIPE:
+        kw = dict(params)
+        if "uris" in kw:
+            kw["uris"] = [u.format(state_uri=state_uri(args.workspace)) for u in kw["uris"]]
+        _print_json(getattr(api, tool)(g, **kw))
+    return 0
+
+
+def cmd_hook(args):
+    from .hooks import run_hook
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        payload = {}
+    api, _store = _api(args)
+    run_hook(api, _local_grant(args.workspace, "claude-code-hook"), args.workspace,
+             args.event, payload)
+    return 0
+
+
 def cmd_serve(args):
     if args.stdio:
         from .server import serve_stdio
@@ -234,6 +302,37 @@ def main(argv=None) -> int:
     v.add_argument("--prune-history", action="store_true",
                    help="also drop superseded versions, making their artifacts reclaimable")
     v.set_defaults(fn=cmd_vacuum)
+
+    pu = sub.add_parser("put", help="write an entry")
+    pu.add_argument("uri")
+    src = pu.add_mutually_exclusive_group()
+    src.add_argument("--body", help="JSON body")
+    src.add_argument("--body-file", help="file holding a JSON body; - reads stdin")
+    pu.add_argument("--digest")
+    pu.add_argument("--auto-digest", action="store_true",
+                    help="allow a generated digest when --digest is missing")
+    pu.add_argument("--status", default="accepted")
+    pu.add_argument("--agent-id", default="cli")
+    pu.set_defaults(fn=cmd_put)
+
+    ge = sub.add_parser("get", help="read entries")
+    ge.add_argument("uris", nargs="+")
+    ge.add_argument("--mode", default="digest", choices=list(MODES))
+    ge.add_argument("--budget", type=int, default=2000)
+    ge.set_defaults(fn=cmd_get)
+
+    se = sub.add_parser("search", help="full-text search over digests and bodies")
+    se.add_argument("query")
+    se.add_argument("--topic")
+    se.add_argument("--limit", type=int, default=10)
+    se.set_defaults(fn=cmd_search)
+
+    sub.add_parser("resume", help="run the resume recipe a fresh agent starts with"
+                   ).set_defaults(fn=cmd_resume)
+
+    hk = sub.add_parser("hook", help="Claude Code hook entry point; reads the payload on stdin")
+    hk.add_argument("event", choices=["pre-compact", "post-compact"])
+    hk.set_defaults(fn=cmd_hook)
 
     s = sub.add_parser("serve")
     s.add_argument("--stdio", action="store_true", default=True)
