@@ -53,6 +53,47 @@ setting in that file, so validate before relying on it.
 Narrow it with the hook's `if` field, or drop it entirely and rely on the worker agent, if it proves
 noisy on quick spawns.
 
+## Compaction checkpoint (hooks)
+
+**The problem:** when Claude Code compacts a long session, it replaces the transcript with a
+summary. Unless the agent wrote its state to the board first, the branch it was on, its uncommitted
+files and the summary are not stored anywhere a later session can read.
+
+The same [`settings.hook.json`](settings.hook.json) adds two hooks that save this without the agent
+having to remember:
+
+| Hook | Writes to `bb://<ws>/run/state/compact-<session id>` |
+|---|---|
+| `PreCompact` | Git branch, last commit, up to 50 uncommitted files, last 5 commits |
+| `PostCompact` | Appends Claude Code's compaction summary and makes it the entry's short summary |
+
+Each compaction in the same session adds a new version of that entry, so earlier ones stay
+readable. The hooks print nothing, so they add no tokens to the session. They never block
+compaction: any error is written to stderr and the hook still exits 0.
+
+Workspace comes from `BLACKBOARD_WORKSPACE` (default `default`); set it in the hook's `env`, or
+change the command to `blackboard-mcp -w <ws> hook pre-compact`. `blackboard-mcp` must be on the
+`PATH` Claude Code runs hooks with.
+
+Read the checkpoint back with `blackboard-mcp -w <ws> get bb://<ws>/run/state/compact-<session id>`.
+
+**Limit:** this has not yet been run against a live compaction. The `compact_summary` field it reads
+is the one another Claude Code plugin (Navigator) documents; if it is missing, the checkpoint keeps
+only the git state.
+
+## Command-line reads and writes
+
+`put`, `get`, `search` and `resume` reach the board without the MCP server, for scripts and hooks.
+They act as the machine's owner (full access to the workspace), because anyone who can run them can
+already open the database file.
+
+```bash
+blackboard-mcp -w ws put bb://ws/run/decision/d1 --body '{"why":"derived"}' --digest "skip generated files"
+blackboard-mcp -w ws get bb://ws/run/decision/d1 --mode full
+blackboard-mcp -w ws search "SED-123"
+blackboard-mcp -w ws resume          # the three reads a fresh agent starts with, one JSON line each
+```
+
 ## Worker agent
 
 Copy [`agents/board-worker.md`](agents/board-worker.md) to `<project>/.claude/agents/board-worker.md`

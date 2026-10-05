@@ -219,11 +219,17 @@ class SQLiteStore:
         return rows[:limit]
 
     def search(self, workspace: str, q: str, limit: int = 10) -> list:
+        # Unquoted, the full-text query language reads `sedai-core` as a column
+        # filter and `SED-123?` as a syntax error, so every word is quoted.
+        terms = [t.replace('"', '""') for t in q.split()]
+        if not terms:
+            return []
+        match = " ".join(f'"{t}"' for t in terms)
         try:
             rows = self.conn.execute(
                 "SELECT f.uri AS uri, bm25(entry_fts) AS score FROM entry_fts f "
                 "JOIN entry e ON e.uri=f.uri WHERE entry_fts MATCH ? AND e.workspace=? "
-                "ORDER BY score LIMIT ?", (q, workspace, limit)).fetchall()
+                "ORDER BY score LIMIT ?", (match, workspace, limit)).fetchall()
         except sqlite3.OperationalError:
             return []
         return [(r["uri"], float(r["score"])) for r in rows]
