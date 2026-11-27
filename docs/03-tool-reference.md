@@ -25,7 +25,7 @@ Tool schemas are re-sent on **every turn of every agent**. The surface is a per-
 | Tool | Signature (abbrev.) | Notes |
 |---|---|---|
 | `update_state` | `(uri, body \| source_path, digest, expect_version?, sources[]?, confidence?)` → `{version, digest, warnings}` | CAS on `expect_version`. Rejects a missing `digest` unless `auto_digest=true`. Auto-externalizes >10 KB. **`source_path` is server-side ingestion:** the daemon reads and digests the file itself, so bulk content never transits any context window. This is the difference between offloading *after* paying for the tokens and never paying. |
-| `get_state` | `(uris[], mode=digest\|fields\|table\|full\|ref, fields[]?, budget_tokens=2000)` | Batched. **Digest by default.** Truncates to budget and reports what it omitted. |
+| `get_state` | `(uris[], mode=digest\|fields\|table\|full\|ref, fields[]?, budget_tokens=2000)` | Batched. **Digest by default.** Truncates to budget and reports what it omitted; one entry more than 25% over budget has its body cut (`content_cut`). |
 | `list_keys` | `(topic?, kind?, order?, limit=20, mode=digest\|table\|ref, fields[]?, budget_tokens=2000)` | Topic-scoped by the caller's grant. No global scan exists. `mode=table` → TSV. |
 | `search_keys` | `(q, topic?, limit=10)` → `[{uri, digest, score}]` | FTS5 over digests + bodies. Returns refs, never bodies. |
 | `link_state` | `(src, rel, dst[])` | Provenance / dependency edges. `rel` ∈ `depends_on \| derived_from \| supersedes \| refines \| cites \| part_of \| contradicts`. |
