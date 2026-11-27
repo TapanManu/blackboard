@@ -56,3 +56,24 @@ def test_auto_digest_is_bounded_and_marked():
 
 def test_truncate_respects_budget():
     assert est_tokens(truncate_to_tokens("word " * 2000, 50)) <= 50
+
+
+def _full_item(words):
+    return {"uri": "bb://ws/t/state/1", "digest": "d",
+            "content": wrap_untrusted("bb://ws/t/state/1", "w", "word " * words)}
+
+
+def test_full_read_over_tolerance_is_cut_to_budget():
+    out = pack([_full_item(3000)], budget_tokens=500)
+    item = out["items"][0]
+    assert out["truncated"] and item["content_cut"]["omitted_tokens"] > 0
+    assert item["content"].startswith("<bb:body ") and item["content"].endswith("</bb:body>")
+    assert out["spent_tokens"] <= 500
+
+
+def test_full_read_within_tolerance_comes_back_whole():
+    item = _full_item(0)
+    item["content"] = wrap_untrusted("bb://ws/t/state/1", "w", "word " * 400)
+    budget = int(est_tokens(canonical(item)) / 1.2)
+    out = pack([item], budget_tokens=budget)
+    assert not out["truncated"] and "content_cut" not in out["items"][0]

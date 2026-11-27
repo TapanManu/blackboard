@@ -48,7 +48,7 @@ Every entry has a mandatory ≤200-token `digest`. **Start at `digest`.** Escala
 
 Escalating to `full` on every input recreates exactly the context bloat the board exists to prevent — and you paid for the digest too. If you're escalating more than a third of the time, the digests are the problem; say so.
 
-Every read takes `budget_tokens`. The server truncates to it and tells you what it omitted. Set it honestly; it protects you.
+Every read takes `budget_tokens`. The server truncates to it and tells you what it omitted; one entry more than 25% over budget comes back with its body cut and a `content_cut` note. Set it honestly; it protects you.
 
 ## Before each write, answer this
 

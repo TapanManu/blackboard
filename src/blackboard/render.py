@@ -16,6 +16,9 @@ from typing import Optional, Sequence
 
 from .tokens import est_tokens
 
+# An entry this far over budget still comes back whole: a cut that saves a few tokens costs a re-read.
+BUDGET_TOLERANCE = 0.25
+
 MODES = ("ref", "digest", "fields", "table", "full")
 
 
@@ -107,17 +110,41 @@ def pack(items, budget_tokens: int, spent: int = 0) -> dict:
     Server-side enforcement is the difference between a board that saves tokens
     and a new way to blow up a context window.
     """
-    out, omitted = [], []
+    out, omitted, cut = [], [], False
     for it in items:
         cost = est_tokens(canonical(it))
         if out and spent + cost > budget_tokens:
             omitted.append(it.get("uri"))
             continue
         if not out and spent + cost > budget_tokens:
+            if cost > budget_tokens * (1 + BUDGET_TOLERANCE) and isinstance(it.get("content"), str):
+                it = _cut_content(it, budget_tokens - spent)
+                cost, cut = est_tokens(canonical(it)), True
             out.append(it)          # always return at least one, else a read can never succeed
             spent += cost
             continue
         out.append(it)
         spent += cost
-    return {"items": out, "spent_tokens": spent, "truncated": bool(omitted),
+    return {"items": out, "spent_tokens": spent, "truncated": bool(omitted) or cut,
             "omitted": len(omitted), "omitted_uris": omitted[:50]}
+
+
+def _cut_content(item: dict, budget_tokens: int) -> dict:
+    """Shorten the body inside the untrusted wrapper so the item fits the budget."""
+    head, _, rest = item["content"].partition("\n")
+    inner = rest.rpartition("\n</bb:body>")[0]
+    inner_tokens = est_tokens(inner)
+
+    def build(n: int, omitted: int) -> dict:
+        return {**item, "content": f"{head}\n{inner[:n].rstrip()}…\n</bb:body>",
+                "content_cut": {"omitted_tokens": omitted,
+                                "hint": 'raise budget_tokens or re-read with mode="fields"'}}
+
+    lo, hi = 0, len(inner)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if est_tokens(canonical(build(mid, inner_tokens))) <= budget_tokens:
+            lo = mid
+        else:
+            hi = mid - 1
+    return build(lo, inner_tokens - est_tokens(inner[:lo]))
