@@ -27,7 +27,7 @@ bb://<workspace>/<topic>/<kind>/<id>[@<version>]
 |---|---|
 | See what exists on a topic | `list_keys(topic=..., mode="digest")` |
 | Pull 20 similar records | `list_keys(..., mode="table")` → TSV |
-| Read one thing properly | `get_state(uri, mode="full")` |
+| Read one thing properly | `get_state(uri, mode="fields", fields=[...])` for object bodies; `mode="full"` only when you need the whole body, e.g. resuming a handoff |
 | Find something by meaning | `search_keys(q, topic)` |
 | Save a result | `update_state(uri, body, digest, expect_version=N)` |
 | Save a **set of similar records** | `update_state(uri, columns=[...], rows=[[...],[...]], digest=...)` — name the columns once; **34% fewer tokens** than the same objects |
